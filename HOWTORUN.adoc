@@ -31,6 +31,17 @@ pip install -r requirements.txt
 pip install -e .
 ----
 
+With uv instead, from the repository root:
+
+----
+uv venv
+uv pip install -e .
+----
+
+Either install creates the same console scripts: `musings`,
+`musings-server`, `musings-poller`, `musings-repl`,
+`musings-rcli-executor`, and `mush`.
+
 === 1.4. Configure a token
 
 The server refuses to start without `MUSINGS_TOKEN`. Generate one:
@@ -46,7 +57,7 @@ Never commit a real token.
 == 2. Run the server
 
 ----
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+musings-server
 ----
 
 Then visit:
@@ -95,6 +106,11 @@ export MUSINGS_URL=http://127.0.0.1:8000/api/v1
 export MUSINGS_TOKEN=<same token>
 musings-repl
 ----
+
+For the same shell feel over the job queue instead of `rcli`,
+with a poller running, run `mush`. Each line becomes a job and
+mush waits for its result. `mush --no-wait` submits without
+waiting.
 
 == 6. Docker
 

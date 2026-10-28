@@ -56,7 +56,8 @@ musings is a FastAPI service with five capabilities:
 
 All protected routes require a bearer token (`MUSINGS_TOKEN`). A
 command-line client (`musings`), a poller (`musings-poller`), a
-shell-like REPL client (`musings-repl`), and an `rcli` executor
+shell-like REPL client (`musings-repl`), a job-queue shell
+(`mush`), and an `rcli` executor
 (`musings-rcli-executor`) ship in the repository.
 
 === 1.2. How
@@ -139,7 +140,7 @@ Run it (see link:HOWTORUN.adoc[HOWTORUN] for the full guide):
 ----
 export MUSINGS_TOKEN=$(openssl rand -hex 32)
 export MUSINGS_BASE_DIR=./data
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+musings-server
 ----
 
 === 2.2. macOS
@@ -156,7 +157,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
 export MUSINGS_TOKEN=$(openssl rand -hex 32)
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+musings-server
 ----
 
 === 2.3. Termux (Android)
@@ -172,7 +173,7 @@ cd musings
 pip install -r requirements.txt
 pip install -e .
 export MUSINGS_TOKEN=$(openssl rand -hex 32)
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+musings-server
 ----
 
 The `musings` CLI, `musings-poller`, `musings-repl`, and
@@ -258,6 +259,21 @@ export MUSINGS_URL=http://127.0.0.1:8000/api/v1
 export MUSINGS_TOKEN=<token>
 musings-poller            # loop forever
 musings-poller --once     # one job, then exit (cron-friendly)
+----
+
+For an interactive shell over the same queue, `mush` submits
+each line as a job and waits for its result, printing stdout,
+stderr, and a non-zero exit marker. It holds a working directory
+like the REPL, but the jobs API carries no directory field, so
+the directory is prefixed onto each command and is relative to
+the poller's working directory, not clamped to the base:
+
+----
+export MUSINGS_URL=http://127.0.0.1:8000/api/v1
+export MUSINGS_TOKEN=<token>
+mush
+mush:/$ ls
+mush:/$ quit
 ----
 
 === 3.3. The interactive shell (rcli)

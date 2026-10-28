@@ -1,5 +1,18 @@
 = musings Roadmap
 
+== Unreleased
+
+* `mush` shell REPL over the job queue: each line becomes a
+  `POST /jobs` submission, mush polls until the job succeeds or
+  fails and prints its output; `cd` is held client-side and
+  prefixed onto commands, relative to the poller's working
+  directory; `--no-wait` submits without waiting.
+* `musings-server` console script: runs the service with
+  uvicorn, honouring `MUSINGS_HOST` and `MUSINGS_PORT`
+  (defaults 127.0.0.1:8000), so `uv pip install -e .` installs
+  the server alongside `musings`, `musings-repl`,
+  `musings-rcli-executor`, `musings-poller`, and `mush`.
+
 == v0.1.0 -- done
 
 * FastAPI service: jobs (submit, claim, inspect, result), messages
