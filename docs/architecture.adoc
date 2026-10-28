@@ -1,0 +1,103 @@
+= musings Architecture Overview
+
+musings is a small FastAPI service for bidirectional communication
+with an AI agent, designed to be mortal: it serves one run, writes an
+end-of-transmission (EOT) marker, and exits, so it can sit inside a
+ChRIS workflow as an ordinary batch node.
+
+== Components
+
+* *FastAPI application* (`app/main.py`): route registration and the
+  public root. All API routes live under `/api/v1`.
+* *API layer* (`app/api/v1/routes/`): one module per resource --
+  `jobs`, `files`, `messages`, `system`. Routes validate input with
+  Pydantic models and delegate to services; they hold no state.
+* *Service layer* (`app/services/`): the stateful core.
+  `job_store` holds the in-memory job queue with an asyncio lock;
+  `message_store` holds the inbox; `file_store` confines writes to
+  the base directory; `termination` writes the EOT manifest and
+  schedules process shutdown.
+* *Models* (`app/models/`): Pydantic payloads for jobs, results,
+  messages, file saves, and system responses. API payloads are
+  Pydantic models; internal records are dataclasses.
+* *Core* (`app/core/`): environment settings (`config`, via
+  pydantic-settings) and bearer-token authentication (`security`).
+* *Clients* (`client/`): the `musings` CLI (submit, inspect, save,
+  message, terminate) and the `musings-poller` (claim, execute, post
+  results). Both read `MUSINGS_URL` and `MUSINGS_TOKEN` from the
+  environment and bypass proxy environment variables.
+
+== Data flows
+
+=== Job loop
+
+----
+client: POST /jobs {command}            -> job queued
+poller: GET  /jobs/pending              -> oldest queued job, atomically claimed
+poller: bash -c <command>               -> exit code, stdout, stderr (capped)
+poller: POST /jobs/{id}/result {result} -> job succeeded | failed
+client: GET  /jobs/{id}                 -> job with result
+----
+
+=== File delivery
+
+----
+agent:  POST /save {dir, file, content} -> path resolved under base dir,
+                                          traversal rejected (400),
+                                          parents created, content written
+----
+
+=== Termination
+
+----
+client: POST /terminate {reason}
+server: EOT manifest written (files written, jobs finished, timestamp)
+server: response returned, then process exits (exit code 0)
+downstream: EOT presence in the output directory means "complete"
+----
+
+== State and durability
+
+Job and message state is in process memory and dies with the process.
+This is a deliberate v1 tradeoff, not an oversight: the service is
+mortal, and its queue belongs to one run. File state is the opposite:
+files are the durable product, written to disk under the base
+directory, and the EOT manifest is their index. Persistent job
+history (SQLite) is a roadmap item.
+
+== Authentication
+
+One shared bearer token, read from `MUSINGS_TOKEN`, compared in
+constant time, required on every protected route. The server refuses
+to start without it. The health and root routes are public by design.
+Per-client tokens, scoped tokens, and token expiry are roadmap
+items.
+
+== Deployment modes
+
+* *Standalone.* Run with uvicorn on any host, or with Docker (see
+  `Dockerfile` and `docker-compose.yml`). The base directory is
+  whatever `MUSINGS_BASE_DIR` points at.
+* *ChRIS mortal mode (planned wrapper).* A thin plugin starts the
+  server with the plugin output directory as the base directory and
+  blocks until the server exits on terminate. CUBE then harvests the
+  outputs and the DAG continues. The wrapper is a roadmap item; the
+  server already implements the contract it needs (base dir writes
+  plus EOT-then-exit).
+* *Poll mode (planned).* For hosted ChRIS, where inbound connections
+  to a job container are not available, the plugin instead polls an
+  external musings instance for its job's files and EOT, materializes
+  them into the output directory, and exits. Same EOT contract,
+  inverted direction.
+
+== Decisions
+
+* Polling, not webhooks: the agent side can only make outbound
+  connections, so the service never initiates contact.
+* In-memory queue: matches the mortal lifecycle; persistence can be
+  added without changing the API.
+* EOT as a file, not a message: downstream consumers in a dataflow
+  graph observe files, so completion must itself be a file.
+* No MongoDB: the fapp_build scaffold this layout mirrors assumes
+  MongoDB, but musings state is jobs and files, and both fit in
+  memory and on disk. The dependency was removed deliberately.

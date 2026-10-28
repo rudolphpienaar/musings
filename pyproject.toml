@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "musings"
+version = "0.1.0"
+description = "A mortal FastAPI service for bidirectional communication with an AI agent: job queue, file delivery, and an EOT-terminated bridge into ChRIS workflows."
+authors = [
+    {name = "Rudolph Pienaar", email = "rudolph.pienaar@childrens.harvard.edu"}
+]
+license = {text = "MIT"}
+readme = {file = "README.adoc", content-type = "text/x-asciidoc"}
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pydantic-settings",
+    "httpx",
+]
+
+[project.urls]
+homepage = "https://github.com/rudolphpienaar/musings"
+repository = "https://github.com/rudolphpienaar/musings"
+
+[project.scripts]
+musings = "client.cli:cli_run"
+musings-poller = "client.poller:poller_run"
+
+[tool.setuptools.packages.find]
+include = ["app*", "client*"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

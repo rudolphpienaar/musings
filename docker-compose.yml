@@ -1,0 +1,18 @@
+services:
+  musings:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - MUSINGS_TOKEN=${MUSINGS_TOKEN:?Set MUSINGS_TOKEN before running compose}
+      - MUSINGS_BASE_DIR=/data
+    volumes:
+      - type: volume
+        source: MUSINGS_DATA
+        target: /data
+    restart: unless-stopped
+
+volumes:
+  MUSINGS_DATA:

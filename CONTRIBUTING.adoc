@@ -1,0 +1,36 @@
+= Contributing to musings
+
+We welcome contributions to musings! Please follow these guidelines
+to contribute effectively.
+
+== Ways to Contribute
+
+* Report bugs or issues.
+* Suggest features or improvements.
+* Submit pull requests with bug fixes or new features.
+
+== Development Workflow
+
+1. Fork the repository.
+2. Create a feature branch: `git checkout -b feature-branch-name`.
+3. Commit your changes: `git commit -m "Add feature X"`.
+4. Push to your branch: `git push origin feature-branch-name`.
+5. Open a pull request.
+
+== Style
+
+Python code follows the ChRONOS style guide: Python 3.11+,
+noun-verb (RPN) function naming, lowerCamelCase variables, pervasive
+type hints, dataclasses for pure data, Pydantic models for API
+payloads, Google-style docstrings, and `ruff check` completely clean
+before a change is presented.
+
+== Code of Conduct
+
+Please adhere to the link:CODE_OF_CONDUCT.adoc[Code of Conduct]
+while contributing.
+
+== License
+
+By contributing to this project, you agree that your contributions
+will be licensed under the MIT License.

@@ -1,0 +1,44 @@
+= musings Roadmap
+
+== v0.1.0 -- done
+
+* FastAPI service: jobs (submit, claim, inspect, result), messages
+  inbox, file save with traversal protection, terminate with EOT
+  manifest.
+* Bearer-token authentication from the get-go, required at startup.
+* CLI client (`musings`) and poller (`musings-poller`, including
+  `--once` for cron use).
+* Documentation set: paper-style README, architecture, HOWTORUN,
+  contributing, conduct, security, citation.
+* Docker image and compose file; CI (pytest, ruff) and GHCR publish
+  workflows.
+* ChRONOS Python style throughout; ruff-clean; 13 tests.
+
+== v0.2.0 -- ChRIS wrapper
+
+* Thin `pl-musings` plugin (chris_plugin): server mode -- start the
+  service with the plugin output directory as base directory, block
+  until terminate, exit so the DAG continues.
+* Wrapper `--waitTimeout`: end the node visibly (timeout EOT) when
+  external data never arrives, instead of stalling the DAG.
+* Plugin Dockerfile and ChRIS store registration notes.
+
+== v0.3.0 -- hosted-ChRIS poll mode
+
+* Plugin poll mode: poll an external musings instance for a job's
+  files and EOT, materialize into the output directory, exit.
+* Per-job scoping on the server so one instance can serve several
+  workflow nodes without cross-talk.
+
+== Later
+
+* Claim expiry and requeue for pollers that die mid-job.
+* Persistent job history (SQLite) instead of in-memory state.
+* Per-client and scoped tokens (submit vs execute vs write),
+  token rotation, and expiry.
+* Binary file upload (base64 content field) alongside text saves.
+* Client proxy support (currently `trust_env=False` by design).
+* Command allowlist option for the poller.
+* WebSocket push as an alternative to polling where inbound
+  connections exist.
+* Job log streaming for long-running commands.

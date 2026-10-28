@@ -1,0 +1,97 @@
+= How to Run the musings Server
+
+This document gives step-by-step instructions for running the
+musings server locally, in Docker, and as a poller client.
+
+== Prerequisites
+
+* Python 3.11 or later.
+* `pip`.
+
+== 1. One-time local setup
+
+=== 1.1. Clone the repository
+
+----
+git clone https://github.com/rudolphpienaar/musings.git
+cd musings
+----
+
+=== 1.2. Create and activate a virtual environment
+
+----
+python3 -m venv .venv
+source .venv/bin/activate
+----
+
+=== 1.3. Install dependencies and the application
+
+----
+pip install -r requirements.txt
+pip install -e .
+----
+
+=== 1.4. Configure a token
+
+The server refuses to start without `MUSINGS_TOKEN`. Generate one:
+
+----
+export MUSINGS_TOKEN=$(openssl rand -hex 32)
+export MUSINGS_BASE_DIR=./data
+----
+
+For a persistent setup, copy `.env.example` to `.env` and fill it in.
+Never commit a real token.
+
+== 2. Run the server
+
+----
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+----
+
+Then visit:
+
+* API root: http://127.0.0.1:8000
+* Interactive API docs: http://127.0.0.1:8000/docs
+
+== 3. Run the poller
+
+In another terminal, with the same token and the service URL:
+
+----
+export MUSINGS_URL=http://127.0.0.1:8000/api/v1
+export MUSINGS_TOKEN=<same token>
+musings-poller
+----
+
+Use `musings-poller --once` to execute at most one job and exit.
+
+== 4. Submit work
+
+----
+export MUSINGS_URL=http://127.0.0.1:8000/api/v1
+export MUSINGS_TOKEN=<same token>
+musings submit "df -kh" --description "disk check"
+musings list
+musings save reports disk.txt "report text"
+musings terminate --reason "all data delivered"
+----
+
+== 5. Docker
+
+----
+docker build -t musings .
+docker run --rm \
+  -e MUSINGS_TOKEN=$(openssl rand -hex 32) \
+  -e MUSINGS_BASE_DIR=/data \
+  -p 8000:8000 \
+  -v ./data:/data \
+  musings
+----
+
+== 6. Run the tests
+
+----
+pip install pytest httpx
+python -m pytest -q
+----

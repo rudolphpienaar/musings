@@ -1,0 +1,290 @@
+= musings: a mortal bridge between an AI agent and a ChRIS workflow
+
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
+v0.1.0, 2026-10-28
+:toc:
+
+== Abstract
+
+Scientific workflows are usually dataflow graphs: a node runs, its
+outputs materialize, and the next node consumes them. Human input does
+not fit that shape. A workflow that needs a person -- an approval, a
+missing file, a judgment call, a command executed somewhere else --
+either blocks forever, fails, or routes around the workflow entirely.
+
+*musings* is a small, mortal FastAPI service that closes that gap. An
+external entity submits shell commands as jobs, posts messages, and
+saves files to a running instance; an agent-side poller claims jobs,
+executes them, and posts structured results back. When transmission is
+done, a terminate signal writes an end-of-transmission (EOT) marker
+into the output directory and the server exits. Wrapped as a thin
+ChRIS plugin, musings becomes a workflow node that waits for external
+input and then ends, so the dataflow graph continues -- the long
+standing problem of injecting external data into a ChRIS workflow,
+reduced to one node with one contract: EOT means done.
+
+== 1. Introduction
+
+=== 1.1. What
+
+musings is a FastAPI service with four capabilities:
+
+* *Jobs.* An external entity submits a shell command
+  (`POST /api/v1/jobs`). An agent-side poller claims the oldest queued
+  job (`GET /api/v1/jobs/pending`), executes it, and posts a structured
+  result -- exit code, stdout, stderr, timestamps, truncation flag
+  (`POST /api/v1/jobs/{jobId}/result`).
+* *Messages.* A plain information inbox (`POST /api/v1/messages`,
+  `GET /api/v1/messages`) for unstructured notes alongside jobs.
+* *Files.* An agent-to-user file path (`POST /api/v1/save`) that
+  writes posted content to a directory and file under a configured
+  base directory, with path traversal rejected.
+* *Termination.* A terminate signal (`POST /api/v1/terminate`) that
+  writes an EOT manifest into the base directory and then exits the
+  process. The service is mortal by design: it is born to serve one
+  run, and it dies when that run is complete.
+
+All protected routes require a bearer token (`MUSINGS_TOKEN`). A
+command-line client (`musings`) and a poller (`musings-poller`) ship
+in the repository.
+
+=== 1.2. How
+
+The interaction is a poll loop, chosen because the agent side can
+only make outbound connections. The service never calls the agent;
+the agent polls the service:
+
+----
+submit job  ->  [queued]  ->  poller claims  ->  execute  ->  result posted
+save file   ->  [base dir]                                     (file lands)
+message     ->  [inbox]
+terminate   ->  [EOT written]  ->  process exits
+----
+
+Claiming is atomic: a job moves to `claimed` before it is returned,
+so two pollers never execute the same job. The EOT marker is written
+last, after all files are flushed, so a downstream consumer that sees
+EOT knows the output directory is complete. The marker itself is a
+JSON manifest: termination status, timestamp, reason, files written,
+and jobs finished.
+
+=== 1.3. Why
+
+Two concrete itches motivate this work.
+
+First, agent sandboxing. An AI agent that runs in a sandbox with no
+inbound network path cannot receive anything: no webhooks, no pushed
+files, no interactive commands. Everything must be pulled over
+outbound HTTPS. musings turns that constraint into an interface -- a
+job queue and a file drop that the agent polls -- instead of treating
+it as a limitation to work around per task.
+
+Second, ChRIS workflows. ChRIS is a data-state directed acyclic graph:
+a plugin node completes when its process exits and its outputs are
+harvested. A long-running server inside a node breaks that model,
+unless the server is mortal. musings is built to be that mortal
+server: wrapped as a thin plugin, it blocks in the DAG while it waits
+for external data, and the terminate signal ends it, so the DAG
+continues. External data injection into a ChRIS workflow becomes one
+node, one output directory, and one EOT file.
+
+=== 1.4. Related work
+
+* https://chrisproject.org[ChRIS] and its backend
+  https://github.com/FNNDSC/ChRIS_ultron_backEnd[CUBE]: the
+  containerized medical-compute platform whose batch plugin model
+  musings bridges. Plugins are command-line programs of the form
+  `command [options...] inputdir/ outputdir/`; see
+  https://github.com/FNNDSC/python-chrisapp-template[the Python plugin
+  template].
+* https://github.com/FNNDSC/fapp_build[fapp_build]: the FastAPI
+  project factory whose layout, documentation set, and Docker base
+  this repository mirrors (with its MongoDB assumptions removed).
+* https://fastapi.tiangolo.com[FastAPI]: the web framework musings is
+  built on.
+* https://airflow.apache.org[Apache Airflow] sensors: the established
+  pattern of a workflow node that waits on an external condition
+  before letting the graph proceed. musings applies the same idea to
+  human and agent input, with EOT as the condition.
+
+== 2. Installation (Methods)
+
+Prerequisites on every platform: Python 3.11 or later, and `pip`.
+The server refuses to start without `MUSINGS_TOKEN` set.
+
+=== 2.1. Linux
+
+----
+git clone https://github.com/rudolphpienaar/musings.git
+cd musings
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+----
+
+Run it (see link:HOWTORUN.adoc[HOWTORUN] for the full guide):
+
+----
+export MUSINGS_TOKEN=$(openssl rand -hex 32)
+export MUSINGS_BASE_DIR=./data
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+----
+
+=== 2.2. macOS
+
+Identical, except for obtaining Python (via Homebrew or python.org)
+and creating the environment:
+
+----
+brew install python
+git clone https://github.com/rudolphpienaar/musings.git
+cd musings
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+export MUSINGS_TOKEN=$(openssl rand -hex 32)
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+----
+
+=== 2.3. Termux (Android)
+
+Termux has no systemd and background processes are subject to
+Android's battery management, so run the server in the foreground
+(or under `termux-wake-lock`):
+
+----
+pkg update && pkg install python
+git clone https://github.com/rudolphpienaar/musings.git
+cd musings
+pip install -r requirements.txt
+pip install -e .
+export MUSINGS_TOKEN=$(openssl rand -hex 32)
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+----
+
+The `musings` CLI and `musings-poller` also run under Termux, which
+makes a phone a usable submission and polling station.
+
+=== 2.4. Docker
+
+----
+docker build -t musings .
+docker run --rm \
+  -e MUSINGS_TOKEN=$(openssl rand -hex 32) \
+  -e MUSINGS_BASE_DIR=/data \
+  -p 8000:8000 \
+  -v ./data:/data \
+  musings
+----
+
+Or with compose (see `docker-compose.yml`):
+
+----
+export MUSINGS_TOKEN=$(openssl rand -hex 32)
+docker compose up
+----
+
+== 3. Usage (Discussion)
+
+=== 3.1. Endpoints
+
+All routes live under `/api/v1` except the public root. Every route
+except `GET /` and `GET /api/v1/health` requires
+`Authorization: Bearer <token>`.
+
+|===
+| Method & path | Purpose
+
+| `GET /` | Service info (public).
+| `GET /api/v1/health` | Health check (public).
+| `POST /api/v1/jobs` | Submit a command. Body: `command`,
+  `description`, `timeoutSeconds`.
+| `GET /api/v1/jobs` | List all jobs.
+| `GET /api/v1/jobs/pending` | Atomically claim the oldest queued
+  job. 204 when the queue is empty.
+| `GET /api/v1/jobs/{jobId}` | Fetch one job with its result.
+| `POST /api/v1/jobs/{jobId}/result` | Post an execution result.
+  409 unless the job is claimed.
+| `POST /api/v1/messages` | Post a message to the inbox.
+| `GET /api/v1/messages` | List messages in submission order.
+| `POST /api/v1/save` | Save content to `dir`/`file` under the
+  base directory. Traversal outside the base is a 400.
+| `POST /api/v1/terminate` | Write the EOT marker and exit.
+|===
+
+=== 3.2. The bidirectional loop
+
+From the submitting side:
+
+----
+export MUSINGS_URL=http://127.0.0.1:8000/api/v1
+export MUSINGS_TOKEN=<token>
+musings submit "df -kh" --description "disk check"
+musings list
+musings get <jobId>
+musings save reports disk.txt "disk report text"
+musings terminate --reason "all data delivered"
+----
+
+From the agent side, the poller runs the loop:
+
+----
+export MUSINGS_URL=http://127.0.0.1:8000/api/v1
+export MUSINGS_TOKEN=<token>
+musings-poller            # loop forever
+musings-poller --once     # one job, then exit (cron-friendly)
+----
+
+=== 3.3. The ChRIS mortal mode
+
+In ChRIS mode the service base directory is the plugin output
+directory. The workflow runs the plugin node; the node serves until
+an external entity sends terminate; the EOT marker lands in the
+output directory; the process exits; CUBE harvests the outputs; the
+DAG continues. Downstream nodes gate on the EOT file, whose manifest
+records what was delivered. If the external data never arrives, the
+plugin wrapper's wait timeout (a wrapper parameter, not a server
+feature) must end the node visibly instead of stalling the DAG --
+see link:docs/roadmap.adoc[the roadmap].
+
+=== 3.4. Security notes
+
+The threat model is explicit: whoever holds the bearer token can
+execute shell commands as the user running the poller, and can write
+files under the base directory. Treat the token as a shell credential:
+generate it randomly, distribute it out of band (never in chat, never
+committed), rotate it on suspicion, and do not expose an
+unauthenticated instance to the public internet. Bearer tokens are
+only as safe as their transport, so put HTTPS in front of any
+publicly reachable deployment. The `/save` endpoint additionally
+confines writes to the base directory and rejects absolute paths and
+`..` components. The client tools deliberately bypass proxy
+environment variables (`trust_env=False`) because proxy parsing
+breaks in some sandboxed environments; proxy support is a roadmap
+item.
+
+=== 3.5. Limitations
+
+* Job and message state is in process memory: restarting the server
+  loses the queue. Persistent history is a roadmap item.
+* A claimed job whose poller dies stays claimed; there is no claim
+  expiry or requeue yet.
+* The poller executes commands as the user it runs as, with no
+  allowlist and no sandboxing of its own. An allowlist is a roadmap
+  item.
+* Client proxy support is absent (see above).
+
+== Contributing
+
+See link:CONTRIBUTING.adoc[CONTRIBUTING] and
+link:CODE_OF_CONDUCT.adoc[Code of Conduct].
+
+== License
+
+MIT. See `LICENSE`.
+
+== Citation
+
+See link:CITATION.cff[CITATION.cff].
