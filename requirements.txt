@@ -3,3 +3,4 @@ uvicorn
 pydantic
 pydantic-settings
 httpx
+hostlib

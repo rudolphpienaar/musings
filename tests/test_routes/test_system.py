@@ -1,4 +1,4 @@
-"""Tests for health and termination routes."""
+"""Tests for health and EOT routes."""
 
 from __future__ import annotations
 
@@ -13,13 +13,14 @@ def test_health_is_public(test_client) -> None:
     assert response.json()["status"] == "ok"
 
 
-def test_terminate_writes_eot_without_exiting(
+def test_eot_writes_bare_marker_without_exiting(
     test_client, auth_headers, tmp_path, monkeypatch
 ) -> None:
-    """Terminate writes the EOT marker and schedules the hook.
+    """EOT writes a bare marker and schedules the hook.
 
     The shutdown hook is replaced with a recorder so the test process
-    survives the termination request.
+    survives the termination request. The marker carries no job or
+    file accounting: its presence is the signal.
     """
     calls: list[None] = []
     monkeypatch.setattr(termination, "shutdown_hook", lambda: calls.append(None))
@@ -30,7 +31,9 @@ def test_terminate_writes_eot_without_exiting(
         headers=auth_headers,
     )
     response = test_client.post(
-        "/api/v1/terminate", json={"reason": "test done"}, headers=auth_headers
+        "/api/v1/eot",
+        json={"confirm": "EOT", "reason": "test done"},
+        headers=auth_headers,
     )
     assert response.status_code == 200
     assert response.json()["eotPath"] == "EOT"
@@ -38,11 +41,33 @@ def test_terminate_writes_eot_without_exiting(
 
     eotPath = tmp_path / "EOT"
     assert eotPath.exists()
-    assert "test done" in eotPath.read_text()
-    assert "a.txt" in eotPath.read_text()
+    content = eotPath.read_text()
+    assert "test done" in content
+    assert "a.txt" not in content
 
 
-def test_terminate_requires_auth(test_client) -> None:
+def test_eot_rejects_generic_posts(test_client, auth_headers) -> None:
+    """A generic POST must not terminate: the payload model guards."""
+    assert test_client.post("/api/v1/eot", json={}, headers=auth_headers).status_code == 422
+    assert (
+        test_client.post("/api/v1/eot", json={"reason": "x"}, headers=auth_headers).status_code
+        == 422
+    )
+    assert (
+        test_client.post(
+            "/api/v1/eot", json={"confirm": "yes"}, headers=auth_headers
+        ).status_code
+        == 422
+    )
+
+
+def test_eot_requires_auth(test_client) -> None:
     """Unauthenticated termination is rejected with 401."""
-    response = test_client.post("/api/v1/terminate", json={})
+    response = test_client.post("/api/v1/eot", json={"confirm": "EOT"})
     assert response.status_code == 401
+
+
+def test_terminate_route_is_gone(test_client, auth_headers) -> None:
+    """The old manifest-writing terminate endpoint no longer exists."""
+    response = test_client.post("/api/v1/terminate", json={}, headers=auth_headers)
+    assert response.status_code == 404

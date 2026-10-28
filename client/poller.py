@@ -2,9 +2,9 @@
 
 The poller is the agent side of the bidirectional loop. It polls
 ``GET /jobs/pending`` (204 means the queue is empty), runs the claimed
-command as ``bash -c <command>``, and posts the structured result back
-to ``POST /jobs/{jobId}/result``. Claiming is atomic on the server,
-so two pollers never execute the same job.
+command through hostlib as an explicit ``sh -c`` invocation, and posts
+the structured result back to ``POST /jobs/{jobId}/result``. Claiming
+is atomic on the server, so two pollers never execute the same job.
 
 Run with::
 
@@ -20,12 +20,12 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 
 import httpx
+from hostlib import JobSpec, job_run
 
 
 def output_truncate(text: str, maxChars: int) -> tuple[str, bool]:
@@ -43,33 +43,44 @@ def output_truncate(text: str, maxChars: int) -> tuple[str, bool]:
     return text[:maxChars], True
 
 
+def timestamp_format(value) -> str:
+    """Format a hostlib timestamp as an ISO string.
+
+    Args:
+        value: Hostlib timestamp (already an ISO string) or a
+            datetime, or None.
+
+    Returns:
+        ISO string, or now when the value is missing.
+    """
+    if isinstance(value, str) and value:
+        return value
+    if value is not None:
+        return value.isoformat()
+    return datetime.now(timezone.utc).isoformat()
+
+
 def job_execute(command: str, timeoutSeconds: int, maxChars: int) -> dict:
     """Execute one command and build its result payload.
 
     Args:
-        command: Shell command, run as ``bash -c``.
+        command: Shell command, run through hostlib as ``sh -c``.
         timeoutSeconds: Execution timeout.
         maxChars: Output character cap.
 
     Returns:
         A result payload matching the server JobResult model.
     """
-    startedAt = datetime.now(timezone.utc)
-    try:
-        completed = subprocess.run(
-            ["bash", "-c", command],
-            capture_output=True,
-            text=True,
-            timeout=timeoutSeconds,
-        )
-        exitCode = completed.returncode
-        stdoutText = completed.stdout
-        stderrText = completed.stderr
-    except subprocess.TimeoutExpired as error:
-        exitCode = 124
-        stdoutText = error.stdout.decode() if isinstance(error.stdout, bytes) else (error.stdout or "")
-        stderrText = (error.stderr.decode() if isinstance(error.stderr, bytes) else (error.stderr or "")) + "\nCommand timed out."
-    finishedAt = datetime.now(timezone.utc)
+    result = job_run(
+        JobSpec(argv=["sh", "-c", command], timeout=float(timeoutSeconds))
+    )
+    exitCode = 124 if result.timedOut else (result.returncode if result.returncode is not None else 1)
+    stdoutText = result.stdout
+    stderrText = result.stderr
+    if result.timedOut:
+        stderrText += "\nCommand timed out."
+    startedAt = timestamp_format(result.startedAt)
+    finishedAt = timestamp_format(result.endedAt)
     stdoutKept, stdoutTruncated = output_truncate(stdoutText, maxChars)
     stderrKept, stderrTruncated = output_truncate(stderrText, maxChars)
     return {
@@ -77,8 +88,8 @@ def job_execute(command: str, timeoutSeconds: int, maxChars: int) -> dict:
         "stdout": stdoutKept,
         "stderr": stderrKept,
         "truncated": stdoutTruncated or stderrTruncated,
-        "startedAt": startedAt.isoformat(),
-        "finishedAt": finishedAt.isoformat(),
+        "startedAt": startedAt,
+        "finishedAt": finishedAt,
     }
 
 

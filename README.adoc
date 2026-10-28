@@ -1,7 +1,7 @@
 = musings: a mortal bridge between an AI agent and a ChRIS workflow
 
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
-v0.1.0, 2026-10-28
+v0.2.0, 2026-10-28
 :toc:
 
 == Abstract
@@ -15,9 +15,12 @@ either blocks forever, fails, or routes around the workflow entirely.
 *musings* is a small, mortal FastAPI service that closes that gap. An
 external entity submits shell commands as jobs, posts messages, and
 saves files to a running instance; an agent-side poller claims jobs,
-executes them, and posts structured results back. When transmission is
-done, a terminate signal writes an end-of-transmission (EOT) marker
-into the output directory and the server exits. Wrapped as a thin
+executes them, and posts structured results back; and an interactive
+client speaks the synchronous `rcli` rendezvous, where one POST
+blocks until an attached executor runs the command and streams the
+output back. When transmission is done, an EOT signal writes a bare
+end-of-transmission (EOT) marker into the output directory and the
+server exits. Wrapped as a thin
 ChRIS plugin, musings becomes a workflow node that waits for external
 input and then ends, so the dataflow graph continues -- the long
 standing problem of injecting external data into a ChRIS workflow,
@@ -27,7 +30,7 @@ reduced to one node with one contract: EOT means done.
 
 === 1.1. What
 
-musings is a FastAPI service with four capabilities:
+musings is a FastAPI service with five capabilities:
 
 * *Jobs.* An external entity submits a shell command
   (`POST /api/v1/jobs`). An agent-side poller claims the oldest queued
@@ -39,14 +42,22 @@ musings is a FastAPI service with four capabilities:
 * *Files.* An agent-to-user file path (`POST /api/v1/save`) that
   writes posted content to a directory and file under a configured
   base directory, with path traversal rejected.
-* *Termination.* A terminate signal (`POST /api/v1/terminate`) that
-  writes an EOT manifest into the base directory and then exits the
-  process. The service is mortal by design: it is born to serve one
+* *Rcli.* A synchronous rendezvous (`POST /api/v1/rcli`): the request
+  blocks until an attached executor runs the command, and the response
+  streams back as JSON lines -- output chunks as produced, closed by
+  an execution envelope. Executors claim work through a long-poll
+  (`GET /api/v1/rcli/next`), so they only need outbound connections.
+* *Termination.* An EOT signal (`POST /api/v1/eot`) that writes a bare
+  EOT marker into the base directory and then exits the process. The
+  endpoint does only this, and its payload model -- `confirm` must be
+  exactly `EOT` -- keeps a generic POST from shutting the server
+  down. The service is mortal by design: it is born to serve one
   run, and it dies when that run is complete.
 
 All protected routes require a bearer token (`MUSINGS_TOKEN`). A
-command-line client (`musings`) and a poller (`musings-poller`) ship
-in the repository.
+command-line client (`musings`), a poller (`musings-poller`), a
+shell-like REPL client (`musings-repl`), and an `rcli` executor
+(`musings-rcli-executor`) ship in the repository.
 
 === 1.2. How
 
@@ -58,15 +69,15 @@ the agent polls the service:
 submit job  ->  [queued]  ->  poller claims  ->  execute  ->  result posted
 save file   ->  [base dir]                                     (file lands)
 message     ->  [inbox]
-terminate   ->  [EOT written]  ->  process exits
+rcli        ->  [executor runs]  ->  streamed back            (one request)
+eot         ->  [EOT written]  ->  process exits
 ----
 
 Claiming is atomic: a job moves to `claimed` before it is returned,
 so two pollers never execute the same job. The EOT marker is written
 last, after all files are flushed, so a downstream consumer that sees
-EOT knows the output directory is complete. The marker itself is a
-JSON manifest: termination status, timestamp, reason, files written,
-and jobs finished.
+EOT knows the output directory is complete. The marker is bare: its
+presence is the signal, and it carries no job or file accounting.
 
 === 1.3. Why
 
@@ -84,7 +95,7 @@ a plugin node completes when its process exits and its outputs are
 harvested. A long-running server inside a node breaks that model,
 unless the server is mortal. musings is built to be that mortal
 server: wrapped as a thin plugin, it blocks in the DAG while it waits
-for external data, and the terminate signal ends it, so the DAG
+for external data, and the EOT signal ends it, so the DAG
 continues. External data injection into a ChRIS workflow becomes one
 node, one output directory, and one EOT file.
 
@@ -164,7 +175,8 @@ export MUSINGS_TOKEN=$(openssl rand -hex 32)
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ----
 
-The `musings` CLI and `musings-poller` also run under Termux, which
+The `musings` CLI, `musings-poller`, `musings-repl`, and
+`musings-rcli-executor` also run under Termux, which
 makes a phone a usable submission and polling station.
 
 === 2.4. Docker
@@ -211,7 +223,18 @@ except `GET /` and `GET /api/v1/health` requires
 | `GET /api/v1/messages` | List messages in submission order.
 | `POST /api/v1/save` | Save content to `dir`/`file` under the
   base directory. Traversal outside the base is a 400.
-| `POST /api/v1/terminate` | Write the EOT marker and exit.
+| `POST /api/v1/rcli` | Submit a command; the request blocks until
+  an attached executor runs it, and the response streams back as
+  JSON lines closed by an execution envelope. 503 when no executor
+  is attached.
+| `GET /api/v1/rcli/next` | Executor long-poll: claim the next
+  pending submission. 204 when the wait expires with nothing pending.
+| `POST /api/v1/rcli/{submissionId}/chunk` | Executor post: one
+  output chunk for a claimed submission.
+| `POST /api/v1/rcli/{submissionId}/result` | Executor post: the
+  final execution envelope for a claimed submission.
+| `POST /api/v1/eot` | Write the bare EOT marker and exit.
+  Body must confirm with `confirm: "EOT"`.
 |===
 
 === 3.2. The bidirectional loop
@@ -225,7 +248,7 @@ musings submit "df -kh" --description "disk check"
 musings list
 musings get <jobId>
 musings save reports disk.txt "disk report text"
-musings terminate --reason "all data delivered"
+musings eot --reason "all data delivered"
 ----
 
 From the agent side, the poller runs the loop:
@@ -237,22 +260,55 @@ musings-poller            # loop forever
 musings-poller --once     # one job, then exit (cron-friendly)
 ----
 
-=== 3.3. The ChRIS mortal mode
+=== 3.3. The interactive shell (rcli)
+
+For a human at a prompt, the job queue's two-step turn is the wrong
+shape. The `rcli` rendezvous is one POST per command, with output
+streaming back as it is produced. An executor attaches from
+wherever commands should run -- a container, a laptop, an agent
+sandbox -- and the REPL client provides the shell experience:
+
+----
+export MUSINGS_URL=http://127.0.0.1:8000/api/v1
+export MUSINGS_TOKEN=<token>
+export MUSINGS_RCLI_BASE_DIR=/work
+musings-rcli-executor     # attach; commands are confined to /work
+----
+
+----
+export MUSINGS_URL=http://127.0.0.1:8000/api/v1
+export MUSINGS_TOKEN=<token>
+musings-repl
+musings:/$ ls
+musings:/$ cd reports
+musings:/reports$ cat disk.txt
+musings:/reports$ quit
+----
+
+The REPL holds the working directory and intercepts `cd` itself;
+every other line is sent with the current directory, and the server
+clamps it to the base. Because commands genuinely run on the
+executor's machine, the ordinary Unix vocabulary comes for free.
+See link:docs/comms.adoc[the communication contracts] for the full
+design, including the streaming envelope and the fail-fast rule
+when no executor is attached.
+
+=== 3.4. The ChRIS mortal mode
 
 In ChRIS mode the service base directory is the plugin output
 directory. The workflow runs the plugin node; the node serves until
-an external entity sends terminate; the EOT marker lands in the
+an external entity sends the EOT signal; the EOT marker lands in the
 output directory; the process exits; CUBE harvests the outputs; the
-DAG continues. Downstream nodes gate on the EOT file, whose manifest
-records what was delivered. If the external data never arrives, the
+DAG continues. Downstream nodes gate on the EOT file. If the external data never arrives, the
 plugin wrapper's wait timeout (a wrapper parameter, not a server
 feature) must end the node visibly instead of stalling the DAG --
 see link:docs/roadmap.adoc[the roadmap].
 
-=== 3.4. Security notes
+=== 3.5. Security notes
 
 The threat model is explicit: whoever holds the bearer token can
-execute shell commands as the user running the poller, and can write
+execute shell commands as the user running the poller or any
+attached `rcli` executor, and can write
 files under the base directory. Treat the token as a shell credential:
 generate it randomly, distribute it out of band (never in chat, never
 committed), rotate it on suspicion, and do not expose an
@@ -265,7 +321,7 @@ environment variables (`trust_env=False`) because proxy parsing
 breaks in some sandboxed environments; proxy support is a roadmap
 item.
 
-=== 3.5. Limitations
+=== 3.6. Limitations
 
 * Job and message state is in process memory: restarting the server
   loses the queue. Persistent history is a roadmap item.

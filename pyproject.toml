@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "musings"
-version = "0.1.0"
-description = "A mortal FastAPI service for bidirectional communication with an AI agent: job queue, file delivery, and an EOT-terminated bridge into ChRIS workflows."
+version = "0.2.0"
+description = "A mortal FastAPI service for bidirectional communication with an AI agent: job queue, file delivery, rcli rendezvous, and an EOT-terminated bridge into ChRIS workflows."
 authors = [
     {name = "Rudolph Pienaar", email = "rudolph.pienaar@childrens.harvard.edu"}
 ]
@@ -18,6 +18,7 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "httpx",
+    "hostlib",
 ]
 
 [project.urls]
@@ -27,6 +28,8 @@ repository = "https://github.com/rudolphpienaar/musings"
 [project.scripts]
 musings = "client.cli:cli_run"
 musings-poller = "client.poller:poller_run"
+musings-repl = "client.repl:repl_run"
+musings-rcli-executor = "client.rcli_executor:executor_run"
 
 [tool.setuptools.packages.find]
 include = ["app*", "client*"]

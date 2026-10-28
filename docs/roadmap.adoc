@@ -14,17 +14,40 @@
   workflows.
 * ChRONOS Python style throughout; ruff-clean; 13 tests.
 
-== v0.2.0 -- ChRIS wrapper
+== v0.2.0 -- done
 
+* `rcli` endpoint: synchronous rendezvous -- a submitter's POST
+  blocks until an attached executor runs the command; response
+  streamed as JSON lines (stdout/stderr chunks as produced) closed
+  by the hostlib envelope; fail fast when no executor is attached;
+  a stream ending without the envelope means unknown outcome.
+* REPL client in-repo (`musings-repl`): shell-like Python prompt
+  whose lines become `/rcli` posts; client holds the working
+  directory and intercepts `cd`; server clamps the working
+  directory to the base directory.
+* `rcli` executor client (`musings-rcli-executor`): long-polls
+  `/rcli/next`, runs commands through hostlib, streams chunks back,
+  closes with the result envelope.
+* hostlib as the execution backend for the poller and the `rcli`
+  executors, replacing the poller's bare shell invocation; the
+  shell-wrap decision (wrap in `sh -c` vs split argv) is made per
+  endpoint in musings, not in hostlib, which stays unextended.
+* EOT endpoint narrowed to terminate-only with a validated payload
+  model (replacing the v0.1 manifest-writing terminate); its only
+  effects are the bare EOT marker and process exit.
+* Communication contracts documented in `docs/comms.adoc`.
+* ChRONOS Python style throughout; ruff-clean; 31 tests.
+
+== v0.3.0 -- ChRIS wrapper and hosted-ChRIS poll mode
+
+* Settle the executor-selection rule (first waiting executor vs
+  addressed by name) when a second executor attaches.
 * Thin `pl-musings` plugin (chris_plugin): server mode -- start the
   service with the plugin output directory as base directory, block
   until terminate, exit so the DAG continues.
 * Wrapper `--waitTimeout`: end the node visibly (timeout EOT) when
   external data never arrives, instead of stalling the DAG.
 * Plugin Dockerfile and ChRIS store registration notes.
-
-== v0.3.0 -- hosted-ChRIS poll mode
-
 * Plugin poll mode: poll an external musings instance for a job's
   files and EOT, materialize into the output directory, exit.
 * Per-job scoping on the server so one instance can serve several
@@ -39,6 +62,5 @@
 * Binary file upload (base64 content field) alongside text saves.
 * Client proxy support (currently `trust_env=False` by design).
 * Command allowlist option for the poller.
-* WebSocket push as an alternative to polling where inbound
-  connections exist.
-* Job log streaming for long-running commands.
+* WebSocket executor attach as an alternative to long-poll for
+  `rcli`, where the transport allows it.

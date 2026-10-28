@@ -16,6 +16,7 @@ from app.services.file_store import FileStore
 from app.services.file_store import file_store_get
 from app.services.job_store import JobStore, store_get
 from app.services.message_store import MessageStore, message_store_get
+from app.services.rcli_store import RcliStore, rcli_store_get
 
 
 @pytest.fixture
@@ -31,10 +32,16 @@ def test_client(tmp_path) -> Generator[TestClient, None, None]:
     jobStore = JobStore()
     messageStore = MessageStore()
     fileStore = FileStore(tmp_path)
+    rcliStore = RcliStore(
+        presenceWindowSeconds=60.0,
+        claimTimeoutSeconds=2.0,
+        nextWaitSeconds=0.5,
+    )
     app = app_create()
     app.dependency_overrides[store_get] = lambda: jobStore
     app.dependency_overrides[message_store_get] = lambda: messageStore
     app.dependency_overrides[file_store_get] = lambda: fileStore
+    app.dependency_overrides[rcli_store_get] = lambda: rcliStore
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()

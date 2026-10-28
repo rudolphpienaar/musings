@@ -1,14 +1,15 @@
-"""System models: health, termination, and the EOT manifest.
+"""System models: health, EOT termination.
 
 The EOT (end-of-transmission) marker is the contract with downstream
 consumers, including ChRIS workflows: its presence in the output
-directory means transmission for this run is complete, and its content
-is a manifest of what was delivered.
+directory means transmission for this run is complete. The EOT
+endpoint does only terminate, and its payload model is the guard
+that keeps a generic POST from shutting the server down.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -27,18 +28,21 @@ class HealthResponse(BaseModel):
     status: str = "ok"
 
 
-class TerminateRequest(BaseModel):
+class EotRequest(BaseModel):
     """Payload for requesting server termination.
 
     Attributes:
-        reason: Human-readable reason for termination, recorded in the
-            EOT manifest.
+        confirm: Must be exactly ``EOT``; the guard against generic
+            POSTs triggering a shutdown.
+        reason: Human-readable reason for termination, recorded in
+            the EOT marker.
     """
 
+    confirm: Literal["EOT"]
     reason: str = ""
 
 
-class TerminateResponse(BaseModel):
+class EotResponse(BaseModel):
     """Outcome of a termination request.
 
     Attributes:
@@ -51,22 +55,17 @@ class TerminateResponse(BaseModel):
     eotPath: str
 
 
-class EotManifest(BaseModel):
+class EotMarker(BaseModel):
     """Content of the EOT marker file.
 
+    The marker carries no accounting: no job counts, no file index.
+    Its presence is the completion signal; its content is only the
+    reason it was written.
+
     Attributes:
-        status: ``complete`` for a normal termination, ``timeout`` when
-            the wrapper gave up waiting (written by the wrapper, not
-            by this endpoint).
-        terminatedAt: When termination was requested.
+        status: ``complete`` for a normal termination.
         reason: Reason supplied with the termination request.
-        filesWritten: Paths saved through ``/save`` during this run,
-            relative to the base directory.
-        jobCount: Number of jobs finished during this run.
     """
 
     status: str = "complete"
-    terminatedAt: datetime
     reason: str = ""
-    filesWritten: list[str] = []
-    jobCount: int = 0

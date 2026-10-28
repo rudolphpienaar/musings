@@ -15,16 +15,23 @@ ChRIS workflow as an ordinary batch node.
 * *Service layer* (`app/services/`): the stateful core.
   `job_store` holds the in-memory job queue with an asyncio lock;
   `message_store` holds the inbox; `file_store` confines writes to
-  the base directory; `termination` writes the EOT manifest and
-  schedules process shutdown.
+  the base directory; `termination` validates the EOT payload model
+  and schedules process shutdown; the `rcli` rendezvous pairs a
+  submitter's blocked POST with an attached executor and streams
+  the executor's output back as JSON lines; the execution backend
+  runs commands through hostlib (see `comms.adoc`).
 * *Models* (`app/models/`): Pydantic payloads for jobs, results,
-  messages, file saves, and system responses. API payloads are
+  messages, file saves, system responses, EOT requests, and `rcli`
+  submissions and stream chunks. API payloads are
   Pydantic models; internal records are dataclasses.
 * *Core* (`app/core/`): environment settings (`config`, via
   pydantic-settings) and bearer-token authentication (`security`).
 * *Clients* (`client/`): the `musings` CLI (submit, inspect, save,
-  message, terminate) and the `musings-poller` (claim, execute, post
-  results). Both read `MUSINGS_URL` and `MUSINGS_TOKEN` from the
+  message, terminate), the `musings-poller` (claim, execute, post
+  results), and the REPL client (a shell-like prompt whose lines
+  become `/rcli` posts; it holds the shell working directory and
+  the server clamps it to the base directory). All read
+  `MUSINGS_URL` and `MUSINGS_TOKEN` from the
   environment and bypass proxy environment variables.
 
 == Data flows
@@ -50,11 +57,36 @@ agent:  POST /save {dir, file, content} -> path resolved under base dir,
 === Termination
 
 ----
-client: POST /terminate {reason}
-server: EOT manifest written (files written, jobs finished, timestamp)
-server: response returned, then process exits (exit code 0)
+client: POST /eot {payload model}
+server: payload model validated (a generic POST cannot terminate)
+server: bare EOT marker written, then process exits (exit code 0)
 downstream: EOT presence in the output directory means "complete"
 ----
+
+The EOT endpoint does only this. It performs no job accounting
+and builds no manifest; the marker and the exit are its whole
+effect. In server mode the wrapping plugin blocks until the
+server exits, so process exit is itself the completion signal
+the DAG waits on.
+
+=== Interactive shell (rcli)
+
+----
+executor: attach to /rcli (long-poll or websocket), outbound only
+client:   POST /rcli {command, cwd}    -> request held open
+server:   pair submission with an attached executor, or fail fast
+          if none is attached
+executor: run command under hostlib in the clamped cwd, stream
+          stdout/stderr chunks back through the server
+client:   JSON lines arrive as output is produced; the final line
+          is the hostlib envelope (status, returncode, host facts)
+----
+
+The submitter's request blocks; the server does not -- held-open
+requests are suspended coroutines. Streaming keeps proxy idle
+timers reset, and a stream that ends without the envelope means
+the connection dropped and the outcome is unknown. See
+`comms.adoc` for the full contract.
 
 == State and durability
 
@@ -62,8 +94,8 @@ Job and message state is in process memory and dies with the process.
 This is a deliberate v1 tradeoff, not an oversight: the service is
 mortal, and its queue belongs to one run. File state is the opposite:
 files are the durable product, written to disk under the base
-directory, and the EOT manifest is their index. Persistent job
-history (SQLite) is a roadmap item.
+directory, and the bare EOT marker is the signal that no more will
+arrive. Persistent job history (SQLite) is a roadmap item.
 
 == Authentication
 
@@ -98,6 +130,22 @@ items.
   added without changing the API.
 * EOT as a file, not a message: downstream consumers in a dataflow
   graph observe files, so completion must itself be a file.
+* EOT does only terminate: the endpoint validates a payload model
+  and then writes the marker and exits. No job accounting, no
+  manifest.
+* Shell state in the client: the REPL client holds the working
+  directory and intercepts `cd`; the server only clamps it to the
+  base directory. The server stays stateless and mortal.
+* Streaming, not polling, for interactive commands: the `rcli`
+  response is chunked JSON lines closed by an execution envelope,
+  so output arrives as it is produced and proxy idle timers stay
+  reset. The job queue remains the tool for batch work.
+* hostlib left as it is: it is deliberately not a shell, and the
+  decision to wrap a command for the shell belongs to musings per
+  endpoint, not to the library.
+* REPL client in-repo: it is protocol-coupled to the server, so it
+  lives beside the CLI and the poller rather than in a separate
+  repository.
 * No MongoDB: the fapp_build scaffold this layout mirrors assumes
   MongoDB, but musings state is jobs and files, and both fit in
   memory and on disk. The dependency was removed deliberately.

@@ -74,10 +74,29 @@ export MUSINGS_TOKEN=<same token>
 musings submit "df -kh" --description "disk check"
 musings list
 musings save reports disk.txt "report text"
-musings terminate --reason "all data delivered"
+musings eot --reason "all data delivered"
 ----
 
-== 5. Docker
+== 5. Run the interactive shell
+
+In one terminal, attach an executor confined to a base directory:
+
+----
+export MUSINGS_URL=http://127.0.0.1:8000/api/v1
+export MUSINGS_TOKEN=<same token>
+export MUSINGS_RCLI_BASE_DIR=./data
+musings-rcli-executor
+----
+
+In another, run the REPL:
+
+----
+export MUSINGS_URL=http://127.0.0.1:8000/api/v1
+export MUSINGS_TOKEN=<same token>
+musings-repl
+----
+
+== 6. Docker
 
 ----
 docker build -t musings .
@@ -89,7 +108,7 @@ docker run --rm \
   musings
 ----
 
-== 6. Run the tests
+== 7. Run the tests
 
 ----
 pip install pytest httpx

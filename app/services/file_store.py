@@ -4,7 +4,7 @@ The store is the security boundary for ``POST /save``: every write is
 resolved against the base directory and rejected when it would escape
 it, whether through ``..`` components, absolute paths, or separators
 in the file name. Parent directories are created on demand, and every
-successful write is recorded for the EOT manifest.
+successful write is recorded for the run.
 """
 
 from __future__ import annotations

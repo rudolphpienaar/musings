@@ -7,7 +7,7 @@ Usage::
     musings submit "df -kh"
     musings get <jobId>
     musings save mydir report.txt "hello"
-    musings terminate
+    musings eot --reason "all data delivered"
 
 Every command reads the service URL and token from the environment.
 """
@@ -123,14 +123,14 @@ def message_post(client: httpx.Client, content: str, author: str) -> None:
     output_print(response.json())
 
 
-def terminate_post(client: httpx.Client, reason: str) -> None:
+def eot_post(client: httpx.Client, reason: str) -> None:
     """Request server termination and print the outcome.
 
     Args:
         client: Authenticated client.
-        reason: Reason recorded in the EOT manifest.
+        reason: Reason recorded in the EOT marker.
     """
-    response = client.post("/terminate", json={"reason": reason})
+    response = client.post("/eot", json={"confirm": "EOT", "reason": reason})
     response.raise_for_status()
     output_print(response.json())
 
@@ -162,7 +162,7 @@ def parser_build() -> argparse.ArgumentParser:
     messageParser.add_argument("content", help="Message body.")
     messageParser.add_argument("--author", default="anonymous", help="Author label.")
 
-    terminateParser = subparsers.add_parser("terminate", help="Terminate the server.")
+    terminateParser = subparsers.add_parser("eot", help="Terminate the server.")
     terminateParser.add_argument("--reason", default="", help="Reason for termination.")
 
     return parser
@@ -187,8 +187,8 @@ def cli_run(argv: list[str] | None = None) -> None:
             file_save(client, args.dirName, args.fileName, args.content)
         elif args.command == "message":
             message_post(client, args.content, args.author)
-        elif args.command == "terminate":
-            terminate_post(client, args.reason)
+        elif args.command == "eot":
+            eot_post(client, args.reason)
     except httpx.HTTPStatusError as error:
         print(f"Request failed: {error.response.status_code} {error.response.text}", file=sys.stderr)
         raise SystemExit(1) from error
