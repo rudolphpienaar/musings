@@ -1,4 +1,4 @@
-# musings: mortal FastAPI service for agent communication.
+# musings: mortal FastAPI service for bidirectional communication with a sandboxed party.
 FROM python:3.12-slim
 
 # Set the working directory in the container
@@ -19,5 +19,5 @@ ENV PYTHONUNBUFFERED=1
 ENV MUSINGS_BASE_DIR=/data
 
 # The token must be supplied at run time: -e MUSINGS_TOKEN=<token>
-# Run the FastAPI app
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the service with its console script, bound to all interfaces.
+CMD ["musings-server", "--host", "0.0.0.0", "--port", "8000"]

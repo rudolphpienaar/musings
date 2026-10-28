@@ -4,21 +4,23 @@ musings exists for parties that cannot reach each other directly.
 One side runs a service on hardware it controls; the other side, an
 agent or a human, can only make outbound connections, or can only
 post files and commands to a place it can reach. The service
-therefore offers not one interface but three contracts, each suited
+therefore offers two core contracts plus one extension, each suited
 to a different shape of interaction: a drop box for streaming files,
-an asynchronous job queue for batch work, and a synchronous
-rendezvous for interactive shell use. All three share the same
+an asynchronous job queue for batch work, and, as an extension, a
+synchronous
+rendezvous for interactive shell use. All share the same
 authentication, the same base directory, and the same notion of
-completion. Two shell clients provide the human-facing ends: a
-Python REPL client for the synchronous contract, and `mush`, a
-shell over the job queue. This document describes the contracts as
+completion. Two shell clients provide the human-facing ends: `mush`,
+a
+shell over the job queue, and a Python REPL client for the
+synchronous extension. This document describes the contracts as
 agreed; the machinery that implements them is described in
 `architecture.adoc`.
 
 == The drop box
 
-The original purpose of musings is the simplest of the three
-contracts: a place an external party can deposit files into, which
+The original purpose of musings is the simplest core contract:
+a place an external party can deposit files into, which
 the owner of the service can then reach. An external analysis, or
 an agent, posts files through the file-save endpoint into the
 server's base directory, one file at a time, for as long as it has
@@ -53,15 +55,44 @@ runs, and ChRIS nodes that poll an external instance for their
 inputs. Its cost is latency and indirection: every turn is two
 requests, submit and fetch, and the submitter must poll for the
 result. That cost is acceptable for batch work and unacceptable
-for an interactive shell, which is why the third contract exists.
+for an interactive shell, which is why the extension exists.
 
 Its interactive end is `mush`, described below: a shell whose
 lines become job submissions, for a human who wants the queue
 rather than the rendezvous.
 
+== The mush shell
+
+Mush is the shell over the job queue, the counterpart of the
+REPL client over the rendezvous. The user believes they are on
+a shell, but in reality they are in a local read-eval-post
+loop: each line becomes a `POST /jobs` submission, and mush
+polls `GET /jobs/{jobId}` until the job succeeds or fails,
+then prints its stdout, its stderr, and a non-zero exit marker
+when the command failed. Where the REPL streams output as it is
+produced, mush shows results only when they arrive, because the
+queue has no stream to forward; where the REPL needs an
+attached executor, mush needs a running poller, and any poller
+will do, since the queue's executor is shared across
+submitters rather than paired with one shell.
+
+The working directory is held client-side, as in the REPL:
+mush intercepts `cd` lines itself and updates its own record
+of the current directory. But the jobs API carries no
+directory field, so mush prefixes the directory onto each
+submitted command, and the server does not clamp it. The
+directory is therefore relative to the poller's working
+directory, not to the service base directory, and a command
+that depends on it depends on where the poller was started.
+Interrupting a wait abandons the wait, not the job: mush
+prints the job identifier, and the result can still be
+fetched later. With `--no-wait`, mush submits each line and
+prints its queued job identifier without waiting at all,
+which makes it a posting shell as well as a waiting one.
+
 == The rcli rendezvous
 
-The third contract, `rcli`, is the synchronous complement of the
+The extension, `rcli`, is the synchronous complement of the
 job queue, and it is the contract the REPL client speaks. The
 musings server hosts an `/rcli` endpoint. Any client may attach to
 it as an executor: the agent in its sandbox, another container, a
@@ -143,35 +174,6 @@ authentication code for no gain. It becomes a general tool only if
 the protocol ever stabilises enough for other services to speak
 it, and that is not the case now.
 
-== The mush shell
-
-Mush is the shell over the job queue, the counterpart of the
-REPL client over the rendezvous. The user believes they are on
-a shell, but in reality they are in a local read-eval-post
-loop: each line becomes a `POST /jobs` submission, and mush
-polls `GET /jobs/{jobId}` until the job succeeds or fails,
-then prints its stdout, its stderr, and a non-zero exit marker
-when the command failed. Where the REPL streams output as it is
-produced, mush shows results only when they arrive, because the
-queue has no stream to forward; where the REPL needs an
-attached executor, mush needs a running poller, and any poller
-will do, since the queue's executor is shared across
-submitters rather than paired with one shell.
-
-The working directory is held client-side, as in the REPL:
-mush intercepts `cd` lines itself and updates its own record
-of the current directory. But the jobs API carries no
-directory field, so mush prefixes the directory onto each
-submitted command, and the server does not clamp it. The
-directory is therefore relative to the poller's working
-directory, not to the service base directory, and a command
-that depends on it depends on where the poller was started.
-Interrupting a wait abandons the wait, not the job: mush
-prints the job identifier, and the result can still be
-fetched later. With `--no-wait`, mush submits each line and
-prints its queued job identifier without waiting at all,
-which makes it a posting shell as well as a waiting one.
-
 == Execution
 
 Commands are executed through hostlib, a small dependency-free
@@ -193,28 +195,28 @@ narrowness is the library's value, and it is left as it is. The
 decision of when to allow a shell -- wrapping an incoming command
 string for the shell, or splitting it into an argument list and
 running it directly -- belongs to musings, per endpoint, not to
-the library all its consumers share. The poller, which today runs
-commands through a bare shell invocation with a timeout and an
-output cap, moves to hostlib as its execution backend under the
-same rule.
+the library all its consumers share. The poller runs
+commands through hostlib as an explicit `sh -c` invocation,
+with a timeout and an output cap, under the same rule.
 
-== The three contracts together
+== The contracts together
 
-The contracts divide by interaction shape, not by importance. The
+The core contracts divide by interaction shape. The
 drop box moves files from an external party into a workflow, and
 EOT ends the transfer. The job queue moves batch commands through
 a poller, and the result arrives when it arrives; `mush` is its
 interactive end, for a human who wants the queue as a shell.
-The `rcli`
-rendezvous moves interactive commands through an executor, and the
-result arrives in the same request that asked for it; the REPL
+`rcli` is an extension, not a third core contract: it reverses
+the direction, letting a submitter ask an external executor to
+run a command and wait for it, and it exists for the shape where
+work cannot run inside the sandbox at all. The REPL
 client is its interactive end, for a human who wants a shell
 with output as it is produced. A workflow
 that needs files uses the first; a workflow that needs batch
 compute uses the second; a human who wants a shell uses the
-second through `mush` or the third through the REPL, depending
+second through `mush` or the extension through the REPL, depending
 on whether the result may wait or must stream.
-All three are guarded by the same bearer token, and the token
+All are guarded by the same bearer token, and the token
 holder owns the executor's shell for as long as an executor stays
 attached -- which is the point of the service, and the reason the
 token is required from the start and never optional.

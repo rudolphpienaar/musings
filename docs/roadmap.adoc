@@ -1,6 +1,6 @@
 = musings Roadmap
 
-== Unreleased
+== v0.2.1 -- done
 
 * `mush` shell REPL over the job queue: each line becomes a
   `POST /jobs` submission, mush polls until the job succeeds or
@@ -12,6 +12,10 @@
   (defaults 127.0.0.1:8000), so `uv pip install -e .` installs
   the server alongside `musings`, `musings-repl`,
   `musings-rcli-executor`, `musings-poller`, and `mush`.
+* `output_truncate` returns a modeled `TruncatedText` dataclass
+  instead of a bare tuple, per the ChRONOS rule that
+  non-primitive returns are modeled; both call sites updated.
+* ChRONOS Python style throughout; ruff-clean; 36 tests.
 
 == v0.1.0 -- done
 

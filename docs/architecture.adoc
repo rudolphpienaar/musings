@@ -28,12 +28,12 @@ it inside a ChRIS workflow as an ordinary batch node.
   pydantic-settings) and bearer-token authentication (`security`).
 * *Clients* (`client/`): the `musings` CLI (submit, inspect, save,
   message, terminate), the `musings-poller` (claim, execute, post
-  results), the REPL client (`musings-repl`, a shell-like prompt
-  whose lines become `/rcli` posts; it holds the shell working
-  directory and the server clamps it to the base directory), the
-  job-queue shell (`mush`, a shell-like prompt whose lines become
+  results), the job-queue shell (`mush`, a shell-like prompt whose lines become
   `/jobs` posts and which polls for their results; it holds the
   working directory client-side and prefixes it onto commands),
+  the REPL client (`musings-repl`, a shell-like prompt
+  whose lines become `/rcli` posts; it holds the shell working
+  directory and the server clamps it to the base directory),
   and the `rcli` executor (`musings-rcli-executor`, which
   long-polls `/rcli/next`, executes under hostlib, and streams
   chunks back). All read

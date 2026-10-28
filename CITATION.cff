@@ -3,6 +3,6 @@ message: "If you use musings, please cite it as below."
 authors:
   - family-names: "Pienaar"
     given-names: "Rudolph"
-title: "musings: a mortal bridge between an AI agent and a ChRIS workflow"
-version: "0.1.0"
+title: "musings: a small, mortal service for a sandboxed party"
+version: "0.2.1"
 date-released: "2026-10-28"

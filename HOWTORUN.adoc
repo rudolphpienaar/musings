@@ -39,8 +39,8 @@ uv pip install -e .
 ----
 
 Either install creates the same console scripts: `musings`,
-`musings-server`, `musings-poller`, `musings-repl`,
-`musings-rcli-executor`, and `mush`.
+`musings-server`, `musings-poller`, `mush`, `musings-repl`,
+and `musings-rcli-executor`.
 
 === 1.4. Configure a token
 
@@ -90,7 +90,13 @@ musings eot --reason "all data delivered"
 
 == 5. Run the interactive shell
 
-In one terminal, attach an executor confined to a base directory:
+For the shell feel over the job queue, with a poller running,
+run `mush`. Each line becomes a job and
+mush waits for its result. `mush --no-wait` submits without
+waiting.
+
+For the same shell feel over the `rcli` extension instead,
+attach an executor confined to a base directory in one terminal:
 
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1
@@ -106,11 +112,6 @@ export MUSINGS_URL=http://127.0.0.1:8000/api/v1
 export MUSINGS_TOKEN=<same token>
 musings-repl
 ----
-
-For the same shell feel over the job queue instead of `rcli`,
-with a poller running, run `mush`. Each line becomes a job and
-mush waits for its result. `mush --no-wait` submits without
-waiting.
 
 == 6. Docker
 

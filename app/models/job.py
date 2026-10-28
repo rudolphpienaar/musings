@@ -27,7 +27,7 @@ class JobCreate(BaseModel):
     """Payload for submitting a new job.
 
     Attributes:
-        command: Shell command to execute, run as ``bash -c <command>``.
+        command: Shell command to execute, run as ``sh -c <command>``.
         description: Human-readable note about what the job is for.
         timeoutSeconds: Execution timeout; null means the server default.
     """
