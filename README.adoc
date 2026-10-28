@@ -15,14 +15,14 @@ either blocks forever, fails, or routes around the workflow entirely.
 *musings* is a small, mortal FastAPI service that closes that gap. An
 external entity submits shell commands as jobs, posts messages, and
 saves files to a running instance; an agent-side poller claims jobs,
-executes them, and posts structured results back; and an interactive
-client speaks the synchronous `rcli` rendezvous, where one POST
+executes them, and posts structured results back. Separately, an
+interactive client speaks the synchronous `rcli` rendezvous, where
+one POST
 blocks until an attached executor runs the command and streams the
 output back. When transmission is done, an EOT signal writes a bare
 end-of-transmission (EOT) marker into the output directory and the
-server exits. One use is as a workflow node: the pl-musings wrapper
-to come wraps musings as a thin
-ChRIS plugin, a node that waits for external
+server exits. One use is as a workflow node: wrapped as a thin
+ChRIS plugin, musings is a node that waits for external
 input and then ends, so the dataflow graph continues -- the long
 standing problem of injecting external data into a workflow,
 reduced to one node with one contract: EOT means done.
@@ -31,29 +31,40 @@ reduced to one node with one contract: EOT means done.
 
 === 1.1. What
 
-musings is a FastAPI service with five capabilities:
+musings is a FastAPI service with six capabilities:
 
 * *Jobs.* An external entity submits a shell command
   (`POST /api/v1/jobs`). An agent-side poller claims the oldest queued
   job (`GET /api/v1/jobs/pending`), executes it, and posts a structured
   result -- exit code, stdout, stderr, timestamps, truncation flag
   (`POST /api/v1/jobs/{jobId}/result`).
+* *Mush.* A shell over the job queue (`mush`): each line typed at
+  the prompt becomes a job submission, and `mush` polls for its
+  result, then prints stdout, stderr, and a non-zero exit marker
+  when the command failed. It holds a working directory and
+  intercepts `cd`, but the jobs API carries no directory field,
+  so the directory is prefixed onto each command and is relative
+  to the poller's working directory.
 * *Messages.* A plain information inbox (`POST /api/v1/messages`,
   `GET /api/v1/messages`) for unstructured notes alongside jobs.
 * *Files.* An agent-to-user file path (`POST /api/v1/save`) that
   writes posted content to a directory and file under a configured
   base directory, with path traversal rejected.
-* *Rcli.* A synchronous rendezvous (`POST /api/v1/rcli`): the request
-  blocks until an attached executor runs the command, and the response
-  streams back as JSON lines -- output chunks as produced, closed by
-  an execution envelope. Executors claim work through a long-poll
-  (`GET /api/v1/rcli/next`), so they only need outbound connections.
 * *Termination.* An EOT signal (`POST /api/v1/eot`) that writes a bare
   EOT marker into the base directory and then exits the process. The
   endpoint does only this, and its payload model -- `confirm` must be
   exactly `EOT` -- keeps a generic POST from shutting the server
   down. The service is mortal by design: it is born to serve one
   run, and it dies when that run is complete.
+* *Rcli (extension).* This is an extension, not the point of
+  musings: it reverses the core direction, letting a submitter ask
+  an external executor to run a command and wait for the result,
+  instead of bringing work into the sandbox. A synchronous
+  rendezvous (`POST /api/v1/rcli`): the request
+  blocks until an attached executor runs the command, and the response
+  streams back as JSON lines -- output chunks as produced, closed by
+  an execution envelope. Executors claim work through a long-poll
+  (`GET /api/v1/rcli/next`), so they only need outbound connections.
 
 All protected routes require a bearer token (`MUSINGS_TOKEN`). A
 command-line client (`musings`), a server (`musings-server`),
@@ -84,31 +95,51 @@ presence is the signal, and it carries no job or file accounting.
 
 === 1.3. Why
 
-Two concrete itches motivate this work.
+Musings exists for one situation: a sandbox that is closed by
+design. Nothing can reach into it -- no inbound network path, no
+webhooks, no pushed files, no interactive login -- and in a
+regulated setting that closure is a feature, not a bug. But a
+closed system still needs outside help, and it needs that help
+in a regulated fashion: only outbound connections from the
+sandbox, one bearer token, writes confined to a base directory,
+and a server that dies on EOT instead of lingering.
 
-First, agent sandboxing. An AI agent that runs in a sandbox with no
-inbound network path cannot receive anything: no webhooks, no pushed
-files, no interactive commands. Everything must be pulled over
-outbound HTTPS. musings turns that constraint into an interface -- a
-job queue and a file drop that the agent polls -- instead of treating
-it as a limitation to work around per task.
+The help takes three shapes, and musings serves all three
+through the same channel. An external agent -- human or LLM --
+intervenes deus ex machina, from outside a system that cannot
+be opened.
 
-Second, ChRIS workflows. ChRIS is a data-state directed acyclic graph:
-a plugin node completes when its process exits and its outputs are
-harvested. A long-running server inside a node breaks that model,
-unless the server is mortal. The pl-musings wrapper to come turns
-musings into that mortal server: wrapped as a thin plugin, it blocks
-in the DAG while it waits
-for external data, and the EOT signal ends it, so the DAG
-continues. External data injection into a ChRIS workflow becomes one
-node, one output directory, and one EOT file.
+First, external files in. A workflow needs files it does not
+have: a missing input, an approval, a judgment call, a dataset
+held elsewhere. The external agent saves files to a running
+instance and signals completion with EOT, and the workflow
+consumes what landed. A workflow node waiting on external data
+is one instance of this shape, not a separate purpose.
+
+Second, external manipulation of internal files. Sometimes the
+files already exist inside, and the outside party needs to
+change them: edit a configuration, patch a script, reorganize
+an output directory. The same channel carries that work --
+files written under the base directory, commands executed
+against them by the poller, results posted back -- without
+opening the sandbox itself.
+
+Third, an external process, run and monitored from inside.
+Sometimes the work cannot run inside the sandbox at all: a
+tool, a license, a dataset, or a machine that lives elsewhere.
+The closed system then needs to reach out, not only to be
+reached. The `rcli` rendezvous serves that shape: a submitter
+inside asks an external executor to run the process, watches
+its output as it is produced, and ingests the results and
+files back through the same regulated channel. This is the
+reverse direction, and it is why `rcli` exists, even though
+it is an extension to the core rather than the core itself.
 
 === 1.4. Related work
 
 * https://chrisproject.org[ChRIS] and its backend
   https://github.com/FNNDSC/ChRIS_ultron_backEnd[CUBE]: the
-  containerized medical-compute platform whose batch plugin model
-  the pl-musings wrapper will bridge. Plugins are command-line programs of the form
+  containerized medical-compute platform. Plugins are command-line programs of the form
   `command [options...] inputdir/ outputdir/`; see
   https://github.com/FNNDSC/python-chrisapp-template[the Python plugin
   template].
@@ -298,10 +329,14 @@ mush:/reports$ cat disk.txt
 mush:/reports$ quit
 ----
 
-=== 3.4. The interactive shell (rcli)
+=== 3.4. The interactive shell (rcli, an extension)
 
-For a human at a prompt, the job queue's two-step turn is the wrong
-shape. The `rcli` rendezvous is one POST per command, with output
+Rcli is an extension, not the point of musings. Where jobs and
+mush bring work into the sandbox, rcli reverses the direction:
+a submitter asks an external executor to run a command and waits
+for the result. For a human at a prompt, the job queue's two-step
+turn is the wrong
+shape for that direction. The `rcli` rendezvous is one POST per command, with output
 streaming back as it is produced. An executor attaches from
 wherever commands should run -- a container, a laptop, an agent
 sandbox -- and the REPL client provides the shell experience:
