@@ -149,17 +149,17 @@ def submission_execute(
         sink=sink,
     )
     exitCode = 124 if result.timedOut else (result.returncode if result.returncode is not None else 1)
-    stdoutKept, stdoutTruncated = output_truncate(result.stdout, maxChars)
-    stderrKept, stderrTruncated = output_truncate(result.stderr, maxChars)
+    stdoutTruncation = output_truncate(result.stdout, maxChars)
+    stderrTruncation = output_truncate(result.stderr, maxChars)
     client.post(
         f"/rcli/{submissionId}/result",
         json={
             "status": result.status,
             "returncode": exitCode,
-            "stdout": stdoutKept,
-            "stderr": stderrKept,
+            "stdout": stdoutTruncation.text,
+            "stderr": stderrTruncation.text,
             "errors": list(result.errors),
-            "truncated": sink.truncated or stdoutTruncated or stderrTruncated,
+            "truncated": sink.truncated or stdoutTruncation.truncated or stderrTruncation.truncated,
             "durationSeconds": result.duration,
         },
     ).raise_for_status()

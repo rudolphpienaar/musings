@@ -1,4 +1,4 @@
-= musings: a mortal bridge between an AI agent and a ChRIS workflow
+= musings: a small, mortal service for a sandboxed party
 
 Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>
 v0.2.0, 2026-10-28
@@ -20,10 +20,11 @@ client speaks the synchronous `rcli` rendezvous, where one POST
 blocks until an attached executor runs the command and streams the
 output back. When transmission is done, an EOT signal writes a bare
 end-of-transmission (EOT) marker into the output directory and the
-server exits. Wrapped as a thin
-ChRIS plugin, musings becomes a workflow node that waits for external
+server exits. One use is as a workflow node: the pl-musings wrapper
+to come wraps musings as a thin
+ChRIS plugin, a node that waits for external
 input and then ends, so the dataflow graph continues -- the long
-standing problem of injecting external data into a ChRIS workflow,
+standing problem of injecting external data into a workflow,
 reduced to one node with one contract: EOT means done.
 
 == 1. Introduction
@@ -95,8 +96,9 @@ it as a limitation to work around per task.
 Second, ChRIS workflows. ChRIS is a data-state directed acyclic graph:
 a plugin node completes when its process exits and its outputs are
 harvested. A long-running server inside a node breaks that model,
-unless the server is mortal. musings is built to be that mortal
-server: wrapped as a thin plugin, it blocks in the DAG while it waits
+unless the server is mortal. The pl-musings wrapper to come turns
+musings into that mortal server: wrapped as a thin plugin, it blocks
+in the DAG while it waits
 for external data, and the EOT signal ends it, so the DAG
 continues. External data injection into a ChRIS workflow becomes one
 node, one output directory, and one EOT file.
@@ -106,7 +108,7 @@ node, one output directory, and one EOT file.
 * https://chrisproject.org[ChRIS] and its backend
   https://github.com/FNNDSC/ChRIS_ultron_backEnd[CUBE]: the
   containerized medical-compute platform whose batch plugin model
-  musings bridges. Plugins are command-line programs of the form
+  the pl-musings wrapper will bridge. Plugins are command-line programs of the form
   `command [options...] inputdir/ outputdir/`; see
   https://github.com/FNNDSC/python-chrisapp-template[the Python plugin
   template].

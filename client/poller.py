@@ -22,13 +22,27 @@ import argparse
 import os
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import httpx
 from hostlib import JobSpec, job_run
 
 
-def output_truncate(text: str, maxChars: int) -> tuple[str, bool]:
+@dataclass
+class TruncatedText:
+    """Text kept after truncation, with whether truncation happened.
+
+    Attributes:
+        text: Kept text.
+        truncated: True when text was cut at the cap.
+    """
+
+    text: str
+    truncated: bool
+
+
+def output_truncate(text: str, maxChars: int) -> TruncatedText:
     """Truncate captured output at a character cap.
 
     Args:
@@ -36,11 +50,11 @@ def output_truncate(text: str, maxChars: int) -> tuple[str, bool]:
         maxChars: Maximum characters to keep.
 
     Returns:
-        The kept text and whether truncation happened.
+        The kept text as a modeled value.
     """
     if len(text) <= maxChars:
-        return text, False
-    return text[:maxChars], True
+        return TruncatedText(text=text, truncated=False)
+    return TruncatedText(text=text[:maxChars], truncated=True)
 
 
 def timestamp_format(value) -> str:
@@ -81,13 +95,13 @@ def job_execute(command: str, timeoutSeconds: int, maxChars: int) -> dict:
         stderrText += "\nCommand timed out."
     startedAt = timestamp_format(result.startedAt)
     finishedAt = timestamp_format(result.endedAt)
-    stdoutKept, stdoutTruncated = output_truncate(stdoutText, maxChars)
-    stderrKept, stderrTruncated = output_truncate(stderrText, maxChars)
+    stdoutTruncation = output_truncate(stdoutText, maxChars)
+    stderrTruncation = output_truncate(stderrText, maxChars)
     return {
         "exitCode": exitCode,
-        "stdout": stdoutKept,
-        "stderr": stderrKept,
-        "truncated": stdoutTruncated or stderrTruncated,
+        "stdout": stdoutTruncation.text,
+        "stderr": stderrTruncation.text,
+        "truncated": stdoutTruncation.truncated or stderrTruncation.truncated,
         "startedAt": startedAt,
         "finishedAt": finishedAt,
     }

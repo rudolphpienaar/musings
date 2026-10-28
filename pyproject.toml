@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "musings"
 version = "0.2.0"
-description = "A mortal FastAPI service for bidirectional communication with an AI agent: job queue, file delivery, rcli rendezvous, and an EOT-terminated bridge into ChRIS workflows."
+description = "A mortal FastAPI service for bidirectional communication with a sandboxed party: file drop box, async job queue, synchronous shell rendezvous, and EOT-terminated runs."
 authors = [
     {name = "Rudolph Pienaar", email = "rudolph.pienaar@childrens.harvard.edu"}
 ]

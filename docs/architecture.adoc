@@ -2,8 +2,8 @@
 
 musings is a small FastAPI service for bidirectional communication
 with an AI agent, designed to be mortal: it serves one run, writes an
-end-of-transmission (EOT) marker, and exits, so it can sit inside a
-ChRIS workflow as an ordinary batch node.
+end-of-transmission (EOT) marker, and exits, so a wrapper can sit
+it inside a ChRIS workflow as an ordinary batch node.
 
 == Components
 

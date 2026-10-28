@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
-from client.poller import job_execute
+from client.poller import job_execute, output_truncate
+
+
+def test_output_truncate_models_kept_text_and_flag() -> None:
+    """Truncate returns a model, not a tuple, in both cases."""
+    kept = output_truncate("hi", 100000)
+    assert kept.text == "hi"
+    assert kept.truncated is False
+    cut = output_truncate("hello", 3)
+    assert cut.text == "hel"
+    assert cut.truncated is True
 
 
 def test_job_execute_echo() -> None:
