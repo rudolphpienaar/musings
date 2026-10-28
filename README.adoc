@@ -265,22 +265,38 @@ musings-poller            # loop forever
 musings-poller --once     # one job, then exit (cron-friendly)
 ----
 
-For an interactive shell over the same queue, `mush` submits
-each line as a job and waits for its result, printing stdout,
-stderr, and a non-zero exit marker. It holds a working directory
-like the REPL, but the jobs API carries no directory field, so
-the directory is prefixed onto each command and is relative to
-the poller's working directory, not clamped to the base:
+=== 3.3. The job-queue shell (mush)
+
+For a human at a prompt who wants the job queue, not the
+`rcli` rendezvous, `mush` is the shell over `POST /api/v1/jobs`.
+Each line typed at the prompt becomes one job; `mush` polls
+`GET /api/v1/jobs/{jobId}` until the job succeeds or fails,
+then prints its stdout, its stderr, and a non-zero exit marker
+when the command failed. It needs a running poller, not an
+attached `rcli` executor, and it shows results only when they
+arrive, rather than streaming them as they are produced.
+
+`mush` holds a working directory like the REPL and intercepts
+`cd` itself. The jobs API carries no directory field, so the
+directory is prefixed onto each submitted command, and it is
+relative to the poller's working directory -- not clamped to
+the service base directory the way `rcli` directories are.
+Interrupting a wait abandons the wait but prints the job
+identifier, so the result can still be fetched later with
+`musings get`. With `--no-wait`, `mush` submits each line and
+prints its queued job identifier without waiting:
 
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1
 export MUSINGS_TOKEN=<token>
 mush
 mush:/$ ls
-mush:/$ quit
+mush:/$ cd reports
+mush:/reports$ cat disk.txt
+mush:/reports$ quit
 ----
 
-=== 3.3. The interactive shell (rcli)
+=== 3.4. The interactive shell (rcli)
 
 For a human at a prompt, the job queue's two-step turn is the wrong
 shape. The `rcli` rendezvous is one POST per command, with output
@@ -313,7 +329,7 @@ See link:docs/comms.adoc[the communication contracts] for the full
 design, including the streaming envelope and the fail-fast rule
 when no executor is attached.
 
-=== 3.4. The ChRIS mortal mode
+=== 3.5. The ChRIS mortal mode
 
 In ChRIS mode the service base directory is the plugin output
 directory. The workflow runs the plugin node; the node serves until
@@ -324,7 +340,7 @@ plugin wrapper's wait timeout (a wrapper parameter, not a server
 feature) must end the node visibly instead of stalling the DAG --
 see link:docs/roadmap.adoc[the roadmap].
 
-=== 3.5. Security notes
+=== 3.6. Security notes
 
 The threat model is explicit: whoever holds the bearer token can
 execute shell commands as the user running the poller or any
@@ -341,7 +357,7 @@ environment variables (`trust_env=False`) because proxy parsing
 breaks in some sandboxed environments; proxy support is a roadmap
 item.
 
-=== 3.6. Limitations
+=== 3.7. Limitations
 
 * Job and message state is in process memory: restarting the server
   loses the queue. Persistent history is a roadmap item.

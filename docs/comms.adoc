@@ -9,8 +9,9 @@ to a different shape of interaction: a drop box for streaming files,
 an asynchronous job queue for batch work, and a synchronous
 rendezvous for interactive shell use. All three share the same
 authentication, the same base directory, and the same notion of
-completion. A Python REPL client provides the human-facing end of
-the synchronous contract. This document describes the contracts as
+completion. Two shell clients provide the human-facing ends: a
+Python REPL client for the synchronous contract, and `mush`, a
+shell over the job queue. This document describes the contracts as
 agreed; the machinery that implements them is described in
 `architecture.adoc`.
 
@@ -53,6 +54,10 @@ inputs. Its cost is latency and indirection: every turn is two
 requests, submit and fetch, and the submitter must poll for the
 result. That cost is acceptable for batch work and unacceptable
 for an interactive shell, which is why the third contract exists.
+
+Its interactive end is `mush`, described below: a shell whose
+lines become job submissions, for a human who wants the queue
+rather than the rendezvous.
 
 == The rcli rendezvous
 
@@ -138,6 +143,35 @@ authentication code for no gain. It becomes a general tool only if
 the protocol ever stabilises enough for other services to speak
 it, and that is not the case now.
 
+== The mush shell
+
+Mush is the shell over the job queue, the counterpart of the
+REPL client over the rendezvous. The user believes they are on
+a shell, but in reality they are in a local read-eval-post
+loop: each line becomes a `POST /jobs` submission, and mush
+polls `GET /jobs/{jobId}` until the job succeeds or fails,
+then prints its stdout, its stderr, and a non-zero exit marker
+when the command failed. Where the REPL streams output as it is
+produced, mush shows results only when they arrive, because the
+queue has no stream to forward; where the REPL needs an
+attached executor, mush needs a running poller, and any poller
+will do, since the queue's executor is shared across
+submitters rather than paired with one shell.
+
+The working directory is held client-side, as in the REPL:
+mush intercepts `cd` lines itself and updates its own record
+of the current directory. But the jobs API carries no
+directory field, so mush prefixes the directory onto each
+submitted command, and the server does not clamp it. The
+directory is therefore relative to the poller's working
+directory, not to the service base directory, and a command
+that depends on it depends on where the poller was started.
+Interrupting a wait abandons the wait, not the job: mush
+prints the job identifier, and the result can still be
+fetched later. With `--no-wait`, mush submits each line and
+prints its queued job identifier without waiting at all,
+which makes it a posting shell as well as a waiting one.
+
 == Execution
 
 Commands are executed through hostlib, a small dependency-free
@@ -169,11 +203,17 @@ same rule.
 The contracts divide by interaction shape, not by importance. The
 drop box moves files from an external party into a workflow, and
 EOT ends the transfer. The job queue moves batch commands through
-a poller, and the result arrives when it arrives. The `rcli`
+a poller, and the result arrives when it arrives; `mush` is its
+interactive end, for a human who wants the queue as a shell.
+The `rcli`
 rendezvous moves interactive commands through an executor, and the
-result arrives in the same request that asked for it. A workflow
+result arrives in the same request that asked for it; the REPL
+client is its interactive end, for a human who wants a shell
+with output as it is produced. A workflow
 that needs files uses the first; a workflow that needs batch
-compute uses the second; a human who wants a shell uses the third.
+compute uses the second; a human who wants a shell uses the
+second through `mush` or the third through the REPL, depending
+on whether the result may wait or must stream.
 All three are guarded by the same bearer token, and the token
 holder owns the executor's shell for as long as an executor stays
 attached -- which is the point of the service, and the reason the

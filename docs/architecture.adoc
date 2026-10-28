@@ -10,7 +10,7 @@ ChRIS workflow as an ordinary batch node.
 * *FastAPI application* (`app/main.py`): route registration and the
   public root. All API routes live under `/api/v1`.
 * *API layer* (`app/api/v1/routes/`): one module per resource --
-  `jobs`, `files`, `messages`, `system`. Routes validate input with
+  `jobs`, `files`, `messages`, `rcli`, `system`. Routes validate input with
   Pydantic models and delegate to services; they hold no state.
 * *Service layer* (`app/services/`): the stateful core.
   `job_store` holds the in-memory job queue with an asyncio lock;
@@ -28,9 +28,15 @@ ChRIS workflow as an ordinary batch node.
   pydantic-settings) and bearer-token authentication (`security`).
 * *Clients* (`client/`): the `musings` CLI (submit, inspect, save,
   message, terminate), the `musings-poller` (claim, execute, post
-  results), and the REPL client (a shell-like prompt whose lines
-  become `/rcli` posts; it holds the shell working directory and
-  the server clamps it to the base directory). All read
+  results), the REPL client (`musings-repl`, a shell-like prompt
+  whose lines become `/rcli` posts; it holds the shell working
+  directory and the server clamps it to the base directory), the
+  job-queue shell (`mush`, a shell-like prompt whose lines become
+  `/jobs` posts and which polls for their results; it holds the
+  working directory client-side and prefixes it onto commands),
+  and the `rcli` executor (`musings-rcli-executor`, which
+  long-polls `/rcli/next`, executes under hostlib, and streams
+  chunks back). All read
   `MUSINGS_URL` and `MUSINGS_TOKEN` from the
   environment and bypass proxy environment variables.
 
@@ -41,10 +47,29 @@ ChRIS workflow as an ordinary batch node.
 ----
 client: POST /jobs {command}            -> job queued
 poller: GET  /jobs/pending              -> oldest queued job, atomically claimed
-poller: bash -c <command>               -> exit code, stdout, stderr (capped)
+poller: hostlib sh -c <command>         -> exit code, stdout, stderr (capped)
 poller: POST /jobs/{id}/result {result} -> job succeeded | failed
 client: GET  /jobs/{id}                 -> job with result
 ----
+
+=== Mush loop
+
+----
+mush:   POST /jobs {command}            -> job queued
+poller: GET  /jobs/pending              -> oldest queued job, atomically claimed
+poller: hostlib sh -c <command>         -> exit code, stdout, stderr (capped)
+poller: POST /jobs/{id}/result {result} -> job succeeded | failed
+mush:   GET  /jobs/{id} (poll)           -> job with result, printed
+----
+
+Mush is the interactive end of the job queue, where the poller is
+the shared executor: any job submitter, not only mush, feeds the
+same poller, and mush waits for the result rather than streaming
+it. Its working directory is held client-side and prefixed onto
+commands; unlike `/rcli`, the jobs API carries no directory field
+and the server does not clamp it, so the directory is relative
+to the poller's working directory. See `comms.adoc` for the full
+contract.
 
 === File delivery
 
@@ -135,7 +160,14 @@ items.
   manifest.
 * Shell state in the client: the REPL client holds the working
   directory and intercepts `cd`; the server only clamps it to the
-  base directory. The server stays stateless and mortal.
+  base directory. The server stays stateless and mortal. Mush
+  holds its directory the same way, but prefixes it onto commands
+  because the jobs API carries no directory field.
+* Mush shares the poller: the job queue's executor is shared
+  across submitters, while `rcli` pairs one submitter with one
+  dedicated executor. Mush therefore waits for a result instead
+  of streaming it, and needs a running poller rather than an
+  attached `rcli` executor.
 * Streaming, not polling, for interactive commands: the `rcli`
   response is chunked JSON lines closed by an execution envelope,
   so output arrives as it is produced and proxy idle timers stay
