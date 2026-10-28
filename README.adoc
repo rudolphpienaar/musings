@@ -55,7 +55,8 @@ musings is a FastAPI service with five capabilities:
   run, and it dies when that run is complete.
 
 All protected routes require a bearer token (`MUSINGS_TOKEN`). A
-command-line client (`musings`), a poller (`musings-poller`), a
+command-line client (`musings`), a server (`musings-server`),
+a poller (`musings-poller`), a
 shell-like REPL client (`musings-repl`), a job-queue shell
 (`mush`), and an `rcli` executor
 (`musings-rcli-executor`) ship in the repository.
@@ -122,6 +123,8 @@ node, one output directory, and one EOT file.
 == 2. Installation (Methods)
 
 Prerequisites on every platform: Python 3.11 or later, and `pip`.
+With uv instead, `uv venv` followed by `uv pip install -e .`
+installs the same console scripts (see link:HOWTORUN.adoc[HOWTORUN]).
 The server refuses to start without `MUSINGS_TOKEN` set.
 
 === 2.1. Linux
@@ -176,7 +179,8 @@ export MUSINGS_TOKEN=$(openssl rand -hex 32)
 musings-server
 ----
 
-The `musings` CLI, `musings-poller`, `musings-repl`, and
+The `musings` CLI, `musings-server`, `musings-poller`,
+`musings-repl`, `mush`, and
 `musings-rcli-executor` also run under Termux, which
 makes a phone a usable submission and polling station.
 
