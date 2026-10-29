@@ -6,10 +6,13 @@ environment variables take precedence over ``.env`` values. The bearer
 token is required: the server refuses to start without it, so the
 service is never accidentally left open.
 
-The bind address follows one rule: ``MUSINGS_HOST`` and
-``MUSINGS_PORT`` win when they are set, and otherwise the server
-derives its bind host and port from ``MUSINGS_URL``, so a single URL
-sets both the clients and the server.
+``MUSINGS_URL`` is the one source of truth for where the service lives
+on this machine: the clients connect to it, and the server listens on
+its port. Which interfaces the server listens on is not configuration
+at all but a startup decision, made visibly on the command line with
+``musings-server --public``; a public address, when there is one, is a
+fact about the network in front of the server and only the remote
+client needs to know it.
 """
 
 from __future__ import annotations
@@ -18,8 +21,10 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pydantic import Field, model_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_PORT = 8000
 
 
 class MusingsSettings(BaseSettings):
@@ -29,11 +34,8 @@ class MusingsSettings(BaseSettings):
         musingsToken: Bearer token required by every protected route.
         musingsBaseDir: Root directory under which ``/save`` writes files
             and into which the EOT marker is written on termination.
-        musingsHost: Interface the server binds.
-        musingsPort: Port the server binds.
-        musingsUrl: Service URL the clients use; also the fallback the
-            server derives its bind host and port from when they are
-            not set explicitly.
+        musingsUrl: Service URL on this machine. The clients connect to
+            it, and the server listens on its port (``port_derive``).
         jobTimeoutSeconds: Default execution timeout for poller-run jobs.
         maxOutputChars: Maximum captured stdout/stderr characters kept per
             job result; longer output is truncated.
@@ -51,38 +53,28 @@ class MusingsSettings(BaseSettings):
     musingsBaseDir: Path = Field(
         default=Path("./data"), validation_alias="MUSINGS_BASE_DIR"
     )
-    musingsHost: str = Field(default="127.0.0.1", validation_alias="MUSINGS_HOST")
-    musingsPort: int = Field(default=8000, validation_alias="MUSINGS_PORT")
     musingsUrl: str | None = Field(default=None, validation_alias="MUSINGS_URL")
     jobTimeoutSeconds: int = Field(default=300, validation_alias="JOB_TIMEOUT_SECONDS")
     maxOutputChars: int = Field(default=100000, validation_alias="MAX_OUTPUT_CHARS")
     pollIntervalSeconds: int = Field(default=10, validation_alias="POLL_INTERVAL_SECONDS")
     pollWaitSeconds: int = Field(default=20, validation_alias="POLL_WAIT_SECONDS")
 
-    @model_validator(mode="after")
-    def bind_derive(self) -> MusingsSettings:
-        """Derive the bind host and port from the URL when unset.
+    def port_derive(self) -> int:
+        """Derive the port the server listens on from ``MUSINGS_URL``.
 
         Returns:
-            The settings, with the bind address filled in from
-            ``MUSINGS_URL`` when ``MUSINGS_HOST`` or ``MUSINGS_PORT``
-            were not set explicitly. An explicitly set host or port
-            always wins; a URL without a port falls back to its
-            scheme default (80 for http, 443 for https).
+            The URL's explicit port; its scheme default (80 for http,
+            443 for https) when the URL names none; ``DEFAULT_PORT``
+            when no URL is configured at all.
         """
         if self.musingsUrl is None:
-            return self
+            return DEFAULT_PORT
         parsed = urlparse(self.musingsUrl)
-        if "musingsHost" not in self.model_fields_set and parsed.hostname:
-            self.musingsHost = parsed.hostname
-        if "musingsPort" not in self.model_fields_set:
-            if parsed.port is not None:
-                self.musingsPort = parsed.port
-            elif parsed.scheme == "https":
-                self.musingsPort = 443
-            elif parsed.scheme == "http":
-                self.musingsPort = 80
-        return self
+        if parsed.port is not None:
+            return parsed.port
+        if parsed.scheme == "https":
+            return 443
+        return 80
 
 
 @lru_cache

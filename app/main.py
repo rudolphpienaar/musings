@@ -4,14 +4,19 @@ Run with uvicorn, for example::
 
     MUSINGS_TOKEN=<token> uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-Or with the installed console script, which reads the same
-environment (``MUSINGS_HOST`` and ``MUSINGS_PORT`` override the
-defaults)::
+Or with the installed console script, which listens on the port of
+``MUSINGS_URL`` (default 8000) and, by default, on loopback only::
 
     MUSINGS_TOKEN=<token> musings-server
 
 The token is required: the settings object raises at import time when
 ``MUSINGS_TOKEN`` is unset, so the service cannot start unprotected.
+
+``--public`` listens on every interface instead of loopback, which is
+what a router port forward or a LAN client needs to reach the server.
+It is a flag rather than a setting on purpose: exposing the service is
+a decision to make visibly, at startup, not one to inherit from a file.
+``--host`` and ``--port`` remain as explicit overrides for odd cases.
 
 ``--with-poller`` additionally runs a job poller inside this process,
 for single-machine use where the rendezvous and the execution host are
@@ -56,31 +61,33 @@ def app_create() -> FastAPI:
 app = app_create()
 
 
-def poller_thread_start(host: str, port: int) -> threading.Thread:
+def poller_thread_start(port: int) -> threading.Thread:
     """Start an in-process job poller against this server.
 
     The poller runs in a daemon thread, so it dies with the server
     process, and it dials the server over HTTP exactly as an external
     ``musings-poller`` would: same claim endpoint, same presence
-    stamp, same atomic claiming. It waits for the server to answer
-    its health route before entering the poll loop, so startup order
-    does not matter.
+    stamp, same atomic claiming. It always dials loopback on the bound
+    port, never ``MUSINGS_URL``: it shares the server's process, so
+    loopback is always reachable, whereas a URL naming a public
+    address would route through the network in front of the server
+    and fail on routers without NAT loopback. It waits for the server
+    to answer its health route before entering the poll loop, so
+    startup order does not matter.
 
     Args:
-        host: Interface the server binds, used to derive the poller's
-            target URL when ``MUSINGS_URL`` is not already set.
-        port: Port the server binds.
+        port: Port the server listens on.
 
     Returns:
         The started daemon thread.
     """
     settings = settings_get()
-    # The poller reads its target and token from the environment; fill
-    # them from settings so a .env-configured server needs no exports.
+    # The poller reads its target and token from the environment; the
+    # token comes from settings so a .env-configured server needs no
+    # exports, and the URL is forced to loopback for the reason above.
     os.environ.setdefault("MUSINGS_TOKEN", settings.musingsToken)
-    connectHost = "127.0.0.1" if host == "0.0.0.0" else host
-    os.environ.setdefault("MUSINGS_URL", f"http://{connectHost}:{port}/api/v1")
-    healthUrl = os.environ["MUSINGS_URL"].rstrip("/") + "/health"
+    os.environ["MUSINGS_URL"] = f"http://127.0.0.1:{port}/api/v1"
+    healthUrl = os.environ["MUSINGS_URL"] + "/health"
 
     def poller_delayed_run() -> None:
         """Wait for the server to come up, then run the poll loop."""
@@ -111,8 +118,18 @@ def server_run(argv: list[str] | None = None) -> None:
         argv: Argument list; None means sys.argv.
     """
     parser = argparse.ArgumentParser(description="Run the musings server.")
-    parser.add_argument("--host", default=None, help="Interface to bind.")
-    parser.add_argument("--port", type=int, default=None, help="Port to bind.")
+    parser.add_argument(
+        "--public",
+        action="store_true",
+        help="Listen on every interface (0.0.0.0) instead of loopback only, "
+        "so a port forward or LAN client can reach the server.",
+    )
+    parser.add_argument(
+        "--host", default=None, help="Explicit interface to bind; overrides --public."
+    )
+    parser.add_argument(
+        "--port", type=int, default=None, help="Explicit port; overrides MUSINGS_URL."
+    )
     parser.add_argument(
         "--with-poller",
         action="store_true",
@@ -121,8 +138,8 @@ def server_run(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
     settings = settings_get()
-    host = args.host or settings.musingsHost
-    port = args.port or settings.musingsPort
+    host = args.host or ("0.0.0.0" if args.public else "127.0.0.1")
+    port = args.port or settings.port_derive()
     if args.with_poller:
-        poller_thread_start(host, port)
+        poller_thread_start(port)
     uvicorn.run(app, host=host, port=port)

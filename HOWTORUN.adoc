@@ -61,6 +61,12 @@ Then visit:
 * API root: http://127.0.0.1:8000
 * Interactive API docs: http://127.0.0.1:8000/docs
 
+By default the server listens on loopback only, on the port named by `MUSINGS_URL`. To reach it from another machine, through a router port forward or across a LAN, make that decision visibly at startup:
+
+----
+musings-server --public
+----
+
 The server alone only relays: it queues jobs, stores messages, and writes `/save` files, but it never executes a command. For single-machine use it can embed a poller, which makes this host the execution target for anyone holding the token:
 
 ----

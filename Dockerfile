@@ -19,5 +19,7 @@ ENV PYTHONUNBUFFERED=1
 ENV MUSINGS_BASE_DIR=/data
 
 # The token must be supplied at run time: -e MUSINGS_TOKEN=<token>
-# Run the service with its console script, bound to all interfaces.
-CMD ["musings-server", "--host", "0.0.0.0", "--port", "8000"]
+# A container is reached from outside by definition, so the service
+# listens on every interface. The port is 8000 unless MUSINGS_URL says
+# otherwise.
+CMD ["musings-server", "--public"]
