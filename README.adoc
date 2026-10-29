@@ -6,26 +6,9 @@ v0.2.1, 2026-10-28
 
 == Abstract
 
-Scientific workflows are usually dataflow graphs: a node runs, its
-outputs materialize, and the next node consumes them. Human input does
-not fit that shape. A workflow that needs a person -- an approval, a
-missing file, a judgment call, a command executed somewhere else --
-either blocks forever, fails, or routes around the workflow entirely.
+Scientific workflows are usually dataflow graphs: a node runs, its outputs materialize, and the next node consumes them. Human input does not fit that shape. A workflow that needs a person -- an approval, a missing file, a judgment call, a command executed somewhere else -- either blocks forever, fails, or routes around the workflow entirely.
 
-*musings* is a small, mortal FastAPI service that closes that gap. An
-external entity submits shell commands as jobs, posts messages, and
-saves files to a running instance; an agent-side poller claims jobs,
-executes them, and posts structured results back. Separately, an
-interactive client speaks the synchronous `rcli` rendezvous, where
-one POST
-blocks until an attached executor runs the command and streams the
-output back. When transmission is done, an EOT signal writes a bare
-end-of-transmission (EOT) marker into the output directory and the
-server exits. One use is as a workflow node: wrapped as a thin
-ChRIS plugin, musings is a node that waits for external
-input and then ends, so the dataflow graph continues -- the long
-standing problem of injecting external data into a workflow,
-reduced to one node with one contract: EOT means done.
+*musings* is a small, mortal FastAPI service that closes that gap. An external entity submits shell commands as jobs, posts messages, and saves files to a running instance; an agent-side poller claims jobs, executes them, and posts structured results back. Separately, an interactive client speaks the synchronous `rcli` rendezvous, where one POST blocks until an attached executor runs the command and streams the output back. When transmission is done, an EOT signal writes a bare end-of-transmission (EOT) marker into the output directory and the server exits. One use is as a workflow node: wrapped as a thin ChRIS plugin, musings is a node that waits for external input and then ends, so the dataflow graph continues -- the long standing problem of injecting external data into a workflow, reduced to one node with one contract: EOT means done.
 
 == 1. Introduction
 
@@ -33,51 +16,18 @@ reduced to one node with one contract: EOT means done.
 
 musings is a FastAPI service with six capabilities:
 
-* *Jobs.* An external entity submits a shell command
-  (`POST /api/v1/jobs`). An agent-side poller claims the oldest queued
-  job (`GET /api/v1/jobs/pending`), executes it, and posts a structured
-  result -- exit code, stdout, stderr, timestamps, truncation flag
-  (`POST /api/v1/jobs/{jobId}/result`).
-* *Mush.* A shell over the job queue (`mush`): each line typed at
-  the prompt becomes a job submission, and `mush` polls for its
-  result, then prints stdout, stderr, and a non-zero exit marker
-  when the command failed. It holds a working directory and
-  intercepts `cd`, but the jobs API carries no directory field,
-  so the directory is prefixed onto each command and is relative
-  to the poller's working directory.
-* *Messages.* A plain information inbox (`POST /api/v1/messages`,
-  `GET /api/v1/messages`) for unstructured notes alongside jobs.
-* *Files.* An agent-to-user file path (`POST /api/v1/save`) that
-  writes posted content to a directory and file under a configured
-  base directory, with path traversal rejected.
-* *Termination.* An EOT signal (`POST /api/v1/eot`) that writes a bare
-  EOT marker into the base directory and then exits the process. The
-  endpoint does only this, and its payload model -- `confirm` must be
-  exactly `EOT` -- keeps a generic POST from shutting the server
-  down. The service is mortal by design: it is born to serve one
-  run, and it dies when that run is complete.
-* *Rcli (extension).* This is an extension, not the point of
-  musings: it reverses the core direction, letting a submitter ask
-  an external executor to run a command and wait for the result,
-  instead of bringing work into the sandbox. A synchronous
-  rendezvous (`POST /api/v1/rcli`): the request
-  blocks until an attached executor runs the command, and the response
-  streams back as JSON lines -- output chunks as produced, closed by
-  an execution envelope. Executors claim work through a long-poll
-  (`GET /api/v1/rcli/next`), so they only need outbound connections.
+* *Jobs.* An external entity submits a shell command (`POST /api/v1/jobs`). An agent-side poller claims the oldest queued job (`GET /api/v1/jobs/pending`), executes it, and posts a structured result -- exit code, stdout, stderr, timestamps, truncation flag (`POST /api/v1/jobs/{jobId}/result`).
+* *Mush.* A shell over the job queue (`mush`): each line typed at the prompt becomes a job submission, and `mush` polls for its result, then prints stdout, stderr, and a non-zero exit marker when the command failed. It holds a working directory and intercepts `cd`, but the jobs API carries no directory field, so the directory is prefixed onto each command and is relative to the poller's working directory.
+* *Messages.* A plain information inbox (`POST /api/v1/messages`, `GET /api/v1/messages`) for unstructured notes alongside jobs.
+* *Files.* An agent-to-user file path (`POST /api/v1/save`) that writes posted content to a directory and file under a configured base directory, with path traversal rejected.
+* *Termination.* An EOT signal (`POST /api/v1/eot`) that writes a bare EOT marker into the base directory and then exits the process. The endpoint does only this, and its payload model -- `confirm` must be exactly `EOT` -- keeps a generic POST from shutting the server down. The service is mortal by design: it is born to serve one run, and it dies when that run is complete.
+* *Rcli (extension).* This is an extension, not the point of musings: it reverses the core direction, letting a submitter ask an external executor to run a command and wait for the result, instead of bringing work into the sandbox. A synchronous rendezvous (`POST /api/v1/rcli`): the request blocks until an attached executor runs the command, and the response streams back as JSON lines -- output chunks as produced, closed by an execution envelope. Executors claim work through a long-poll (`GET /api/v1/rcli/next`), so they only need outbound connections.
 
-All protected routes require a bearer token (`MUSINGS_TOKEN`). A
-command-line client (`musings`), a server (`musings-server`),
-a poller (`musings-poller`), a
-shell-like REPL client (`musings-repl`), a job-queue shell
-(`mush`), and an `rcli` executor
-(`musings-rcli-executor`) ship in the repository.
+All protected routes require a bearer token (`MUSINGS_TOKEN`). A command-line client (`musings`), a server (`musings-server`), a poller (`musings-poller`), a shell-like REPL client (`musings-repl`), a job-queue shell (`mush`), and an `rcli` executor (`musings-rcli-executor`) ship in the repository.
 
 === 1.2. How
 
-The interaction is a poll loop, chosen because the agent side can
-only make outbound connections. The service never calls the agent;
-the agent polls the service:
+The interaction is a poll loop, chosen because the agent side can only make outbound connections. The service never calls the agent; the agent polls the service:
 
 ----
 submit job  ->  [queued]  ->  poller claims  ->  execute  ->  result posted
@@ -87,78 +37,30 @@ rcli        ->  [executor runs]  ->  streamed back            (one request)
 eot         ->  [EOT written]  ->  process exits
 ----
 
-Claiming is atomic: a job moves to `claimed` before it is returned,
-so two pollers never execute the same job. The EOT marker is written
-last, after all files are flushed, so a downstream consumer that sees
-EOT knows the output directory is complete. The marker is bare: its
-presence is the signal, and it carries no job or file accounting.
+Claiming is atomic: a job moves to `claimed` before it is returned, so two pollers never execute the same job. The EOT marker is written last, after all files are flushed, so a downstream consumer that sees EOT knows the output directory is complete. The marker is bare: its presence is the signal, and it carries no job or file accounting.
 
 === 1.3. Why
 
-Musings exists for one situation: a sandbox that is closed by
-design. Nothing can reach into it -- no inbound network path, no
-webhooks, no pushed files, no interactive login -- and in a
-regulated setting that closure is a feature, not a bug. But a
-closed system still needs outside help, and it needs that help
-in a regulated fashion: only outbound connections from the
-sandbox, one bearer token, writes confined to a base directory,
-and a server that dies on EOT instead of lingering.
+Musings exists for one situation: a sandbox that is closed by design. Nothing can reach into it -- no inbound network path, no webhooks, no pushed files, no interactive login -- and in a regulated setting that closure is a feature, not a bug. But a closed system still needs outside help, and it needs that help in a regulated fashion: only outbound connections from the sandbox, one bearer token, writes confined to a base directory, and a server that dies on EOT instead of lingering.
 
-The help takes three shapes, and musings serves all three
-through the same channel. An external agent -- human or LLM --
-intervenes deus ex machina, from outside a system that cannot
-be opened.
+The help takes three shapes, and musings serves all three through the same channel. An external agent -- human or LLM -- intervenes deus ex machina, from outside a system that cannot be opened.
 
-First, external files in. A workflow needs files it does not
-have: a missing input, an approval, a judgment call, a dataset
-held elsewhere. The external agent saves files to a running
-instance and signals completion with EOT, and the workflow
-consumes what landed. A workflow node waiting on external data
-is one instance of this shape, not a separate purpose.
+First, external files in. A workflow needs files it does not have: a missing input, an approval, a judgment call, a dataset held elsewhere. The external agent saves files to a running instance and signals completion with EOT, and the workflow consumes what landed. A workflow node waiting on external data is one instance of this shape, not a separate purpose.
 
-Second, external manipulation of internal files. Sometimes the
-files already exist inside, and the outside party needs to
-change them: edit a configuration, patch a script, reorganize
-an output directory. The same channel carries that work --
-files written under the base directory, commands executed
-against them by the poller, results posted back -- without
-opening the sandbox itself.
+Second, external manipulation of internal files. Sometimes the files already exist inside, and the outside party needs to change them: edit a configuration, patch a script, reorganize an output directory. The same channel carries that work -- files written under the base directory, commands executed against them by the poller, results posted back -- without opening the sandbox itself.
 
-Third, an external process, run and monitored from inside.
-Sometimes the work cannot run inside the sandbox at all: a
-tool, a license, a dataset, or a machine that lives elsewhere.
-The closed system then needs to reach out, not only to be
-reached. The `rcli` rendezvous serves that shape: a submitter
-inside asks an external executor to run the process, watches
-its output as it is produced, and ingests the results and
-files back through the same regulated channel. This is the
-reverse direction, and it is why `rcli` exists, even though
-it is an extension to the core rather than the core itself.
+Third, an external process, run and monitored from inside. Sometimes the work cannot run inside the sandbox at all: a tool, a license, a dataset, or a machine that lives elsewhere. The closed system then needs to reach out, not only to be reached. The `rcli` rendezvous serves that shape: a submitter inside asks an external executor to run the process, watches its output as it is produced, and ingests the results and files back through the same regulated channel. This is the reverse direction, and it is why `rcli` exists, even though it is an extension to the core rather than the core itself.
 
 === 1.4. Related work
 
-* https://chrisproject.org[ChRIS] and its backend
-  https://github.com/FNNDSC/ChRIS_ultron_backEnd[CUBE]: the
-  containerized medical-compute platform. Plugins are command-line programs of the form
-  `command [options...] inputdir/ outputdir/`; see
-  https://github.com/FNNDSC/python-chrisapp-template[the Python plugin
-  template].
-* https://github.com/FNNDSC/fapp_build[fapp_build]: the FastAPI
-  project factory whose layout, documentation set, and Docker base
-  this repository mirrors (with its MongoDB assumptions removed).
-* https://fastapi.tiangolo.com[FastAPI]: the web framework musings is
-  built on.
-* https://airflow.apache.org[Apache Airflow] sensors: the established
-  pattern of a workflow node that waits on an external condition
-  before letting the graph proceed. musings applies the same idea to
-  human and agent input, with EOT as the condition.
+* https://chrisproject.org[ChRIS] and its backend https://github.com/FNNDSC/ChRIS_ultron_backEnd[CUBE]: the containerized medical-compute platform. Plugins are command-line programs of the form `command [options...] inputdir/ outputdir/`; see https://github.com/FNNDSC/python-chrisapp-template[the Python plugin template].
+* https://github.com/FNNDSC/fapp_build[fapp_build]: the FastAPI project factory whose layout, documentation set, and Docker base this repository mirrors (with its MongoDB assumptions removed).
+* https://fastapi.tiangolo.com[FastAPI]: the web framework musings is built on.
+* https://airflow.apache.org[Apache Airflow] sensors: the established pattern of a workflow node that waits on an external condition before letting the graph proceed. musings applies the same idea to human and agent input, with EOT as the condition.
 
 == 2. Installation (Methods)
 
-Prerequisites on every platform: Python 3.11 or later, and `pip`.
-With uv instead, `uv venv` followed by `uv pip install -e .`
-installs the same console scripts (see link:HOWTORUN.adoc[HOWTORUN]).
-The server refuses to start without `MUSINGS_TOKEN` set.
+Prerequisites on every platform: Python 3.11 or later, and `pip`. With uv instead, `uv venv` followed by `uv pip install -e .` installs the same console scripts (see link:HOWTORUN.adoc[HOWTORUN]). The server refuses to start without `MUSINGS_TOKEN` set.
 
 === 2.1. Linux
 
@@ -181,8 +83,7 @@ musings-server
 
 === 2.2. macOS
 
-Identical, except for obtaining Python (via Homebrew or python.org)
-and creating the environment:
+Identical, except for obtaining Python (via Homebrew or python.org) and creating the environment:
 
 ----
 brew install python
@@ -198,9 +99,7 @@ musings-server
 
 === 2.3. Termux (Android)
 
-Termux has no systemd and background processes are subject to
-Android's battery management, so run the server in the foreground
-(or under `termux-wake-lock`):
+Termux has no systemd and background processes are subject to Android's battery management, so run the server in the foreground (or under `termux-wake-lock`):
 
 ----
 pkg update && pkg install python
@@ -212,10 +111,7 @@ export MUSINGS_TOKEN=$(openssl rand -hex 32)
 musings-server
 ----
 
-The `musings` CLI, `musings-server`, `musings-poller`,
-`musings-repl`, `mush`, and
-`musings-rcli-executor` also run under Termux, which
-makes a phone a usable submission and polling station.
+The `musings` CLI, `musings-server`, `musings-poller`, `musings-repl`, `mush`, and `musings-rcli-executor` also run under Termux, which makes a phone a usable submission and polling station.
 
 === 2.4. Docker
 
@@ -240,39 +136,26 @@ docker compose up
 
 === 3.1. Endpoints
 
-All routes live under `/api/v1` except the public root. Every route
-except `GET /` and `GET /api/v1/health` requires
-`Authorization: Bearer <token>`.
+All routes live under `/api/v1` except the public root. Every route except `GET /` and `GET /api/v1/health` requires `Authorization: Bearer <token>`.
 
 |===
 | Method & path | Purpose
 
 | `GET /` | Service info (public).
 | `GET /api/v1/health` | Health check (public).
-| `POST /api/v1/jobs` | Submit a command. Body: `command`,
-  `description`, `timeoutSeconds`.
+| `POST /api/v1/jobs` | Submit a command. Body: `command`, `description`, `timeoutSeconds`.
 | `GET /api/v1/jobs` | List all jobs.
-| `GET /api/v1/jobs/pending` | Atomically claim the oldest queued
-  job. 204 when the queue is empty.
+| `GET /api/v1/jobs/pending` | Atomically claim the oldest queued job. 204 when the queue is empty.
 | `GET /api/v1/jobs/{jobId}` | Fetch one job with its result.
-| `POST /api/v1/jobs/{jobId}/result` | Post an execution result.
-  409 unless the job is claimed.
+| `POST /api/v1/jobs/{jobId}/result` | Post an execution result. 409 unless the job is claimed.
 | `POST /api/v1/messages` | Post a message to the inbox.
 | `GET /api/v1/messages` | List messages in submission order.
-| `POST /api/v1/save` | Save content to `dir`/`file` under the
-  base directory. Traversal outside the base is a 400.
-| `POST /api/v1/rcli` | Submit a command; the request blocks until
-  an attached executor runs it, and the response streams back as
-  JSON lines closed by an execution envelope. 503 when no executor
-  is attached.
-| `GET /api/v1/rcli/next` | Executor long-poll: claim the next
-  pending submission. 204 when the wait expires with nothing pending.
-| `POST /api/v1/rcli/{submissionId}/chunk` | Executor post: one
-  output chunk for a claimed submission.
-| `POST /api/v1/rcli/{submissionId}/result` | Executor post: the
-  final execution envelope for a claimed submission.
-| `POST /api/v1/eot` | Write the bare EOT marker and exit.
-  Body must confirm with `confirm: "EOT"`.
+| `POST /api/v1/save` | Save content to `dir`/`file` under the base directory. Traversal outside the base is a 400.
+| `POST /api/v1/rcli` | Submit a command; the request blocks until an attached executor runs it, and the response streams back as JSON lines closed by an execution envelope. 503 when no executor is attached.
+| `GET /api/v1/rcli/next` | Executor long-poll: claim the next pending submission. 204 when the wait expires with nothing pending.
+| `POST /api/v1/rcli/{submissionId}/chunk` | Executor post: one output chunk for a claimed submission.
+| `POST /api/v1/rcli/{submissionId}/result` | Executor post: the final execution envelope for a claimed submission.
+| `POST /api/v1/eot` | Write the bare EOT marker and exit. Body must confirm with `confirm: "EOT"`.
 |===
 
 === 3.2. The bidirectional loop
@@ -300,24 +183,9 @@ musings-poller --once     # one job, then exit (cron-friendly)
 
 === 3.3. The job-queue shell (mush)
 
-For a human at a prompt who wants the job queue, not the
-`rcli` rendezvous, `mush` is the shell over `POST /api/v1/jobs`.
-Each line typed at the prompt becomes one job; `mush` polls
-`GET /api/v1/jobs/{jobId}` until the job succeeds or fails,
-then prints its stdout, its stderr, and a non-zero exit marker
-when the command failed. It needs a running poller, not an
-attached `rcli` executor, and it shows results only when they
-arrive, rather than streaming them as they are produced.
+For a human at a prompt who wants the job queue, not the `rcli` rendezvous, `mush` is the shell over `POST /api/v1/jobs`. Each line typed at the prompt becomes one job; `mush` polls `GET /api/v1/jobs/{jobId}` until the job succeeds or fails, then prints its stdout, its stderr, and a non-zero exit marker when the command failed. It needs a running poller, not an attached `rcli` executor, and it shows results only when they arrive, rather than streaming them as they are produced.
 
-`mush` holds a working directory like the REPL and intercepts
-`cd` itself. The jobs API carries no directory field, so the
-directory is prefixed onto each submitted command, and it is
-relative to the poller's working directory -- not clamped to
-the service base directory the way `rcli` directories are.
-Interrupting a wait abandons the wait but prints the job
-identifier, so the result can still be fetched later with
-`musings get`. With `--no-wait`, `mush` submits each line and
-prints its queued job identifier without waiting:
+`mush` holds a working directory like the REPL and intercepts `cd` itself. The jobs API carries no directory field, so the directory is prefixed onto each submitted command, and it is relative to the poller's working directory -- not clamped to the service base directory the way `rcli` directories are. Interrupting a wait abandons the wait but prints the job identifier, so the result can still be fetched later with `musings get`. With `--no-wait`, `mush` submits each line and prints its queued job identifier without waiting:
 
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1
@@ -331,15 +199,7 @@ mush:/reports$ quit
 
 === 3.4. The interactive shell (rcli, an extension)
 
-Rcli is an extension, not the point of musings. Where jobs and
-mush bring work into the sandbox, rcli reverses the direction:
-a submitter asks an external executor to run a command and waits
-for the result. For a human at a prompt, the job queue's two-step
-turn is the wrong
-shape for that direction. The `rcli` rendezvous is one POST per command, with output
-streaming back as it is produced. An executor attaches from
-wherever commands should run -- a container, a laptop, an agent
-sandbox -- and the REPL client provides the shell experience:
+Rcli is an extension, not the point of musings. Where jobs and mush bring work into the sandbox, rcli reverses the direction: a submitter asks an external executor to run a command and waits for the result. For a human at a prompt, the job queue's two-step turn is the wrong shape for that direction. The `rcli` rendezvous is one POST per command, with output streaming back as it is produced. An executor attaches from wherever commands should run -- a container, a laptop, an agent sandbox -- and the REPL client provides the shell experience:
 
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1
@@ -358,57 +218,26 @@ musings:/reports$ cat disk.txt
 musings:/reports$ quit
 ----
 
-The REPL holds the working directory and intercepts `cd` itself;
-every other line is sent with the current directory, and the server
-clamps it to the base. Because commands genuinely run on the
-executor's machine, the ordinary Unix vocabulary comes for free.
-See link:docs/comms.adoc[the communication contracts] for the full
-design, including the streaming envelope and the fail-fast rule
-when no executor is attached.
+The REPL holds the working directory and intercepts `cd` itself; every other line is sent with the current directory, and the server clamps it to the base. Because commands genuinely run on the executor's machine, the ordinary Unix vocabulary comes for free. See link:docs/comms.adoc[the communication contracts] for the full design, including the streaming envelope and the fail-fast rule when no executor is attached.
 
 === 3.5. The ChRIS mortal mode
 
-In ChRIS mode the service base directory is the plugin output
-directory. The workflow runs the plugin node; the node serves until
-an external entity sends the EOT signal; the EOT marker lands in the
-output directory; the process exits; CUBE harvests the outputs; the
-DAG continues. Downstream nodes gate on the EOT file. If the external data never arrives, the
-plugin wrapper's wait timeout (a wrapper parameter, not a server
-feature) must end the node visibly instead of stalling the DAG --
-see link:docs/roadmap.adoc[the roadmap].
+In ChRIS mode the service base directory is the plugin output directory. The workflow runs the plugin node; the node serves until an external entity sends the EOT signal; the EOT marker lands in the output directory; the process exits; CUBE harvests the outputs; the DAG continues. Downstream nodes gate on the EOT file. If the external data never arrives, the plugin wrapper's wait timeout (a wrapper parameter, not a server feature) must end the node visibly instead of stalling the DAG -- see link:docs/roadmap.adoc[the roadmap].
 
 === 3.6. Security notes
 
-The threat model is explicit: whoever holds the bearer token can
-execute shell commands as the user running the poller or any
-attached `rcli` executor, and can write
-files under the base directory. Treat the token as a shell credential:
-generate it randomly, distribute it out of band (never in chat, never
-committed), rotate it on suspicion, and do not expose an
-unauthenticated instance to the public internet. Bearer tokens are
-only as safe as their transport, so put HTTPS in front of any
-publicly reachable deployment. The `/save` endpoint additionally
-confines writes to the base directory and rejects absolute paths and
-`..` components. The client tools deliberately bypass proxy
-environment variables (`trust_env=False`) because proxy parsing
-breaks in some sandboxed environments; proxy support is a roadmap
-item.
+The threat model is explicit: whoever holds the bearer token can execute shell commands as the user running the poller or any attached `rcli` executor, and can write files under the base directory. Treat the token as a shell credential: generate it randomly, distribute it out of band (never in chat, never committed), rotate it on suspicion, and do not expose an unauthenticated instance to the public internet. Bearer tokens are only as safe as their transport, so put HTTPS in front of any publicly reachable deployment. The `/save` endpoint additionally confines writes to the base directory and rejects absolute paths and `..` components. The client tools deliberately bypass proxy environment variables (`trust_env=False`) because proxy parsing breaks in some sandboxed environments; proxy support is a roadmap item.
 
 === 3.7. Limitations
 
-* Job and message state is in process memory: restarting the server
-  loses the queue. Persistent history is a roadmap item.
-* A claimed job whose poller dies stays claimed; there is no claim
-  expiry or requeue yet.
-* The poller executes commands as the user it runs as, with no
-  allowlist and no sandboxing of its own. An allowlist is a roadmap
-  item.
+* Job and message state is in process memory: restarting the server loses the queue. Persistent history is a roadmap item.
+* A claimed job whose poller dies stays claimed; there is no claim expiry or requeue yet.
+* The poller executes commands as the user it runs as, with no allowlist and no sandboxing of its own. An allowlist is a roadmap item.
 * Client proxy support is absent (see above).
 
 == Contributing
 
-See link:CONTRIBUTING.adoc[CONTRIBUTING] and
-link:CODE_OF_CONDUCT.adoc[Code of Conduct].
+See link:CONTRIBUTING.adoc[CONTRIBUTING] and link:CODE_OF_CONDUCT.adoc[Code of Conduct].
 
 == License
 

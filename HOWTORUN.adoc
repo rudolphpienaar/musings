@@ -1,7 +1,6 @@
 = How to Run the musings Server
 
-This document gives step-by-step instructions for running the
-musings server locally, in Docker, and as a poller client.
+This document gives step-by-step instructions for running the musings server locally, in Docker, and as a poller client.
 
 == Prerequisites
 
@@ -38,9 +37,7 @@ uv venv
 uv pip install -e .
 ----
 
-Either install creates the same console scripts: `musings`,
-`musings-server`, `musings-poller`, `mush`, `musings-repl`,
-and `musings-rcli-executor`.
+Either install creates the same console scripts: `musings`, `musings-server`, `musings-poller`, `mush`, `musings-repl`, and `musings-rcli-executor`.
 
 === 1.4. Configure a token
 
@@ -51,8 +48,7 @@ export MUSINGS_TOKEN=$(openssl rand -hex 32)
 export MUSINGS_BASE_DIR=./data
 ----
 
-For a persistent setup, copy `.env.example` to `.env` and fill it in.
-Never commit a real token.
+For a persistent setup, copy `.env.example` to `.env` and fill it in. Never commit a real token.
 
 == 2. Run the server
 
@@ -90,13 +86,9 @@ musings eot --reason "all data delivered"
 
 == 5. Run the interactive shell
 
-For the shell feel over the job queue, with a poller running,
-run `mush`. Each line becomes a job and
-mush waits for its result. `mush --no-wait` submits without
-waiting.
+For the shell feel over the job queue, with a poller running, run `mush`. Each line becomes a job and mush waits for its result. `mush --no-wait` submits without waiting.
 
-For the same shell feel over the `rcli` extension instead,
-attach an executor confined to a base directory in one terminal:
+For the same shell feel over the `rcli` extension instead, attach an executor confined to a base directory in one terminal:
 
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1

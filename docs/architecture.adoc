@@ -1,44 +1,15 @@
 = musings Architecture Overview
 
-musings is a small FastAPI service for bidirectional communication
-with an AI agent, designed to be mortal: it serves one run, writes an
-end-of-transmission (EOT) marker, and exits, so a wrapper can sit
-it inside a ChRIS workflow as an ordinary batch node.
+musings is a small FastAPI service for bidirectional communication with an AI agent, designed to be mortal: it serves one run, writes an end-of-transmission (EOT) marker, and exits, so a wrapper can sit it inside a ChRIS workflow as an ordinary batch node.
 
 == Components
 
-* *FastAPI application* (`app/main.py`): route registration and the
-  public root. All API routes live under `/api/v1`.
-* *API layer* (`app/api/v1/routes/`): one module per resource --
-  `jobs`, `files`, `messages`, `rcli`, `system`. Routes validate input with
-  Pydantic models and delegate to services; they hold no state.
-* *Service layer* (`app/services/`): the stateful core.
-  `job_store` holds the in-memory job queue with an asyncio lock;
-  `message_store` holds the inbox; `file_store` confines writes to
-  the base directory; `termination` validates the EOT payload model
-  and schedules process shutdown; the `rcli` rendezvous pairs a
-  submitter's blocked POST with an attached executor and streams
-  the executor's output back as JSON lines; the execution backend
-  runs commands through hostlib (see `comms.adoc`).
-* *Models* (`app/models/`): Pydantic payloads for jobs, results,
-  messages, file saves, system responses, EOT requests, and `rcli`
-  submissions and stream chunks. API payloads are
-  Pydantic models; internal records are dataclasses.
-* *Core* (`app/core/`): environment settings (`config`, via
-  pydantic-settings) and bearer-token authentication (`security`).
-* *Clients* (`client/`): the `musings` CLI (submit, inspect, save,
-  message, terminate), the `musings-poller` (claim, execute, post
-  results), the job-queue shell (`mush`, a shell-like prompt whose lines become
-  `/jobs` posts and which polls for their results; it holds the
-  working directory client-side and prefixes it onto commands),
-  the REPL client (`musings-repl`, a shell-like prompt
-  whose lines become `/rcli` posts; it holds the shell working
-  directory and the server clamps it to the base directory),
-  and the `rcli` executor (`musings-rcli-executor`, which
-  long-polls `/rcli/next`, executes under hostlib, and streams
-  chunks back). All read
-  `MUSINGS_URL` and `MUSINGS_TOKEN` from the
-  environment and bypass proxy environment variables.
+* *FastAPI application* (`app/main.py`): route registration and the public root. All API routes live under `/api/v1`.
+* *API layer* (`app/api/v1/routes/`): one module per resource -- `jobs`, `files`, `messages`, `rcli`, `system`. Routes validate input with Pydantic models and delegate to services; they hold no state.
+* *Service layer* (`app/services/`): the stateful core. `job_store` holds the in-memory job queue with an asyncio lock; `message_store` holds the inbox; `file_store` confines writes to the base directory; `termination` validates the EOT payload model and schedules process shutdown; the `rcli` rendezvous pairs a submitter's blocked POST with an attached executor and streams the executor's output back as JSON lines; the execution backend runs commands through hostlib (see `comms.adoc`).
+* *Models* (`app/models/`): Pydantic payloads for jobs, results, messages, file saves, system responses, EOT requests, and `rcli` submissions and stream chunks. API payloads are Pydantic models; internal records are dataclasses.
+* *Core* (`app/core/`): environment settings (`config`, via pydantic-settings) and bearer-token authentication (`security`).
+* *Clients* (`client/`): the `musings` CLI (submit, inspect, save, message, terminate), the `musings-poller` (claim, execute, post results), the job-queue shell (`mush`, a shell-like prompt whose lines become `/jobs` posts and which polls for their results; it holds the working directory client-side and prefixes it onto commands), the REPL client (`musings-repl`, a shell-like prompt whose lines become `/rcli` posts; it holds the shell working directory and the server clamps it to the base directory), and the `rcli` executor (`musings-rcli-executor`, which long-polls `/rcli/next`, executes under hostlib, and streams chunks back). All read `MUSINGS_URL` and `MUSINGS_TOKEN` from the environment and bypass proxy environment variables.
 
 == Data flows
 
@@ -62,14 +33,7 @@ poller: POST /jobs/{id}/result {result} -> job succeeded | failed
 mush:   GET  /jobs/{id} (poll)           -> job with result, printed
 ----
 
-Mush is the interactive end of the job queue, where the poller is
-the shared executor: any job submitter, not only mush, feeds the
-same poller, and mush waits for the result rather than streaming
-it. Its working directory is held client-side and prefixed onto
-commands; unlike `/rcli`, the jobs API carries no directory field
-and the server does not clamp it, so the directory is relative
-to the poller's working directory. See `comms.adoc` for the full
-contract.
+Mush is the interactive end of the job queue, where the poller is the shared executor: any job submitter, not only mush, feeds the same poller, and mush waits for the result rather than streaming it. Its working directory is held client-side and prefixed onto commands; unlike `/rcli`, the jobs API carries no directory field and the server does not clamp it, so the directory is relative to the poller's working directory. See `comms.adoc` for the full contract.
 
 === File delivery
 
@@ -88,11 +52,7 @@ server: bare EOT marker written, then process exits (exit code 0)
 downstream: EOT presence in the output directory means "complete"
 ----
 
-The EOT endpoint does only this. It performs no job accounting
-and builds no manifest; the marker and the exit are its whole
-effect. In server mode the wrapping plugin blocks until the
-server exits, so process exit is itself the completion signal
-the DAG waits on.
+The EOT endpoint does only this. It performs no job accounting and builds no manifest; the marker and the exit are its whole effect. In server mode the wrapping plugin blocks until the server exits, so process exit is itself the completion signal the DAG waits on.
 
 === Interactive shell (rcli)
 
@@ -107,77 +67,31 @@ client:   JSON lines arrive as output is produced; the final line
           is the hostlib envelope (status, returncode, host facts)
 ----
 
-The submitter's request blocks; the server does not -- held-open
-requests are suspended coroutines. Streaming keeps proxy idle
-timers reset, and a stream that ends without the envelope means
-the connection dropped and the outcome is unknown. See
-`comms.adoc` for the full contract.
+The submitter's request blocks; the server does not -- held-open requests are suspended coroutines. Streaming keeps proxy idle timers reset, and a stream that ends without the envelope means the connection dropped and the outcome is unknown. See `comms.adoc` for the full contract.
 
 == State and durability
 
-Job and message state is in process memory and dies with the process.
-This is a deliberate v1 tradeoff, not an oversight: the service is
-mortal, and its queue belongs to one run. File state is the opposite:
-files are the durable product, written to disk under the base
-directory, and the bare EOT marker is the signal that no more will
-arrive. Persistent job history (SQLite) is a roadmap item.
+Job and message state is in process memory and dies with the process. This is a deliberate v1 tradeoff, not an oversight: the service is mortal, and its queue belongs to one run. File state is the opposite: files are the durable product, written to disk under the base directory, and the bare EOT marker is the signal that no more will arrive. Persistent job history (SQLite) is a roadmap item.
 
 == Authentication
 
-One shared bearer token, read from `MUSINGS_TOKEN`, compared in
-constant time, required on every protected route. The server refuses
-to start without it. The health and root routes are public by design.
-Per-client tokens, scoped tokens, and token expiry are roadmap
-items.
+One shared bearer token, read from `MUSINGS_TOKEN`, compared in constant time, required on every protected route. The server refuses to start without it. The health and root routes are public by design. Per-client tokens, scoped tokens, and token expiry are roadmap items.
 
 == Deployment modes
 
-* *Standalone.* Run with uvicorn on any host, or with Docker (see
-  `Dockerfile` and `docker-compose.yml`). The base directory is
-  whatever `MUSINGS_BASE_DIR` points at.
-* *ChRIS mortal mode (planned wrapper).* A thin plugin starts the
-  server with the plugin output directory as the base directory and
-  blocks until the server exits on terminate. CUBE then harvests the
-  outputs and the DAG continues. The wrapper is a roadmap item; the
-  server already implements the contract it needs (base dir writes
-  plus EOT-then-exit).
-* *Poll mode (planned).* For hosted ChRIS, where inbound connections
-  to a job container are not available, the plugin instead polls an
-  external musings instance for its job's files and EOT, materializes
-  them into the output directory, and exits. Same EOT contract,
-  inverted direction.
+* *Standalone.* Run with uvicorn on any host, or with Docker (see `Dockerfile` and `docker-compose.yml`). The base directory is whatever `MUSINGS_BASE_DIR` points at.
+* *ChRIS mortal mode (planned wrapper).* A thin plugin starts the server with the plugin output directory as the base directory and blocks until the server exits on terminate. CUBE then harvests the outputs and the DAG continues. The wrapper is a roadmap item; the server already implements the contract it needs (base dir writes plus EOT-then-exit).
+* *Poll mode (planned).* For hosted ChRIS, where inbound connections to a job container are not available, the plugin instead polls an external musings instance for its job's files and EOT, materializes them into the output directory, and exits. Same EOT contract, inverted direction.
 
 == Decisions
 
-* Polling, not webhooks: the agent side can only make outbound
-  connections, so the service never initiates contact.
-* In-memory queue: matches the mortal lifecycle; persistence can be
-  added without changing the API.
-* EOT as a file, not a message: downstream consumers in a dataflow
-  graph observe files, so completion must itself be a file.
-* EOT does only terminate: the endpoint validates a payload model
-  and then writes the marker and exits. No job accounting, no
-  manifest.
-* Shell state in the client: the REPL client holds the working
-  directory and intercepts `cd`; the server only clamps it to the
-  base directory. The server stays stateless and mortal. Mush
-  holds its directory the same way, but prefixes it onto commands
-  because the jobs API carries no directory field.
-* Mush shares the poller: the job queue's executor is shared
-  across submitters, while `rcli` pairs one submitter with one
-  dedicated executor. Mush therefore waits for a result instead
-  of streaming it, and needs a running poller rather than an
-  attached `rcli` executor.
-* Streaming, not polling, for interactive commands: the `rcli`
-  response is chunked JSON lines closed by an execution envelope,
-  so output arrives as it is produced and proxy idle timers stay
-  reset. The job queue remains the tool for batch work.
-* hostlib left as it is: it is deliberately not a shell, and the
-  decision to wrap a command for the shell belongs to musings per
-  endpoint, not to the library.
-* REPL client in-repo: it is protocol-coupled to the server, so it
-  lives beside the CLI and the poller rather than in a separate
-  repository.
-* No MongoDB: the fapp_build scaffold this layout mirrors assumes
-  MongoDB, but musings state is jobs and files, and both fit in
-  memory and on disk. The dependency was removed deliberately.
+* Polling, not webhooks: the agent side can only make outbound connections, so the service never initiates contact.
+* In-memory queue: matches the mortal lifecycle; persistence can be added without changing the API.
+* EOT as a file, not a message: downstream consumers in a dataflow graph observe files, so completion must itself be a file.
+* EOT does only terminate: the endpoint validates a payload model and then writes the marker and exits. No job accounting, no manifest.
+* Shell state in the client: the REPL client holds the working directory and intercepts `cd`; the server only clamps it to the base directory. The server stays stateless and mortal. Mush holds its directory the same way, but prefixes it onto commands because the jobs API carries no directory field.
+* Mush shares the poller: the job queue's executor is shared across submitters, while `rcli` pairs one submitter with one dedicated executor. Mush therefore waits for a result instead of streaming it, and needs a running poller rather than an attached `rcli` executor.
+* Streaming, not polling, for interactive commands: the `rcli` response is chunked JSON lines closed by an execution envelope, so output arrives as it is produced and proxy idle timers stay reset. The job queue remains the tool for batch work.
+* hostlib left as it is: it is deliberately not a shell, and the decision to wrap a command for the shell belongs to musings per endpoint, not to the library.
+* REPL client in-repo: it is protocol-coupled to the server, so it lives beside the CLI and the poller rather than in a separate repository.
+* No MongoDB: the fapp_build scaffold this layout mirrors assumes MongoDB, but musings state is jobs and files, and both fit in memory and on disk. The dependency was removed deliberately.

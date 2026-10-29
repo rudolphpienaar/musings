@@ -1,7 +1,6 @@
 = Code of Conduct
 
-As contributors and maintainers of this project, we pledge to respect
-all participants and foster a welcoming and inclusive community.
+As contributors and maintainers of this project, we pledge to respect all participants and foster a welcoming and inclusive community.
 
 == Our Standards
 
@@ -11,6 +10,4 @@ all participants and foster a welcoming and inclusive community.
 
 == Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior
-may be reported by contacting the project team. All complaints will
-be reviewed and addressed promptly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project team. All complaints will be reviewed and addressed promptly.

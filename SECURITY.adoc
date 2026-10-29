@@ -1,23 +1,14 @@
 = Security Policy
 
-We take security issues seriously. If you discover a vulnerability,
-please report it responsibly.
+We take security issues seriously. If you discover a vulnerability, please report it responsibly.
 
 == Threat model
 
-Whoever holds the bearer token can execute shell commands as the
-user running the poller, and can write files under the configured
-base directory. Treat the token as a shell credential: generate it
-randomly, distribute it out of band, never commit it, and rotate it
-on suspicion. Do not expose an unauthenticated instance to the
-public internet, and put HTTPS in front of any publicly reachable
-deployment -- bearer tokens are only as safe as their transport.
+Whoever holds the bearer token can execute shell commands as the user running the poller, and can write files under the configured base directory. Treat the token as a shell credential: generate it randomly, distribute it out of band, never commit it, and rotate it on suspicion. Do not expose an unauthenticated instance to the public internet, and put HTTPS in front of any publicly reachable deployment -- bearer tokens are only as safe as their transport.
 
 == Reporting a Vulnerability
 
-To report a vulnerability, open a private security advisory on the
-repository, or email the maintainer. Include a detailed description
-of the issue and steps to reproduce it.
+To report a vulnerability, open a private security advisory on the repository, or email the maintainer. Include a detailed description of the issue and steps to reproduce it.
 
 == Supported Versions
 
@@ -26,5 +17,4 @@ of the issue and steps to reproduce it.
 
 == Response
 
-Reports will be reviewed promptly, and you will receive an
-acknowledgment within 48 hours.
+Reports will be reviewed promptly, and you will receive an acknowledgment within 48 hours.
