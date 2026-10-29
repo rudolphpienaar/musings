@@ -163,7 +163,7 @@ EOF
 chmod 600 .env
 ----
 
-`MUSINGS_TOKEN` is required by the server, which refuses to start without it. `MUSINGS_URL` and `MUSINGS_TOKEN` are both required by the clients (`mush`, `rush`, the poller, the rush executor, and the CLI), which exit when either is unset. `MUSINGS_URL` is ignored by the server, which binds `MUSINGS_HOST` and `MUSINGS_PORT` instead and writes `/save` files under `MUSINGS_BASE_DIR` (default `./data`). The full set of variables with their defaults is in `.env.example`.
+`MUSINGS_TOKEN` is required by the server, which refuses to start without it. `MUSINGS_URL` and `MUSINGS_TOKEN` are both required by the clients (`mush`, `rush`, the poller, the rush executor, and the CLI), which exit when either is unset. The server binds `MUSINGS_HOST` and `MUSINGS_PORT` when they are set, and otherwise derives its bind host and port from `MUSINGS_URL`, so one URL sets both the clients and the server. The server writes `/save` files under `MUSINGS_BASE_DIR` (default `./data`). The full set of variables with their defaults is in `.env.example`.
 
 A `.env` file is read only from the directory the process runs in, so a client started elsewhere needs its own `.env` there or the variables exported explicitly. `.env` is gitignored and excluded from the Docker build by `.dockerignore`, and must never be committed: whoever holds the token holds the shell.
 
