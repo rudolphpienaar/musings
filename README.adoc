@@ -161,9 +161,10 @@ A minimal `.env` for a local server and clients in the same directory looks like
 ----
 MUSINGS_TOKEN=<a long random token>
 MUSINGS_URL=http://127.0.0.1:8000/api/v1
+MUSINGS_BASE_DIR=./data
 ----
 
-Yes, `MUSINGS_URL` belongs in there too: the clients (`mush`, `rush`, the poller, the rush executor, and the CLI) need it to find the service, while the server ignores it and binds `MUSINGS_HOST` and `MUSINGS_PORT` instead. The server refuses to start without `MUSINGS_TOKEN`; the clients exit unless both `MUSINGS_URL` and `MUSINGS_TOKEN` are set. Real environment variables always win over `.env` values, and `.env` is only read from the directory you run in, so a client started elsewhere needs its own `.env` there or the variables exported explicitly. Never commit `.env`: it is gitignored, and it is also excluded from the Docker build by `.dockerignore`, so a token in the checkout never lands in an image.
+Yes, `MUSINGS_URL` belongs in there too: the clients (`mush`, `rush`, the poller, the rush executor, and the CLI) need it to find the service, while the server ignores it and binds `MUSINGS_HOST` and `MUSINGS_PORT` instead, writing `/save` files under `MUSINGS_BASE_DIR` (default `./data`). The server refuses to start without `MUSINGS_TOKEN`; the clients exit unless both `MUSINGS_URL` and `MUSINGS_TOKEN` are set. Real environment variables always win over `.env` values, and `.env` is only read from the directory you run in, so a client started elsewhere needs its own `.env` there or the variables exported explicitly. Never commit `.env`: it is gitignored, and it is also excluded from the Docker build by `.dockerignore`, so a token in the checkout never lands in an image.
 
 === Endpoints
 
