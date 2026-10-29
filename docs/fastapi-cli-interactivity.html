@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<link rel="icon" href="data:," />
+<title>FastAPI CLI Interactivity — Code Prior Art</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,700;8..60,900&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f6f4ef; --bg2:#eeeae1; --card:#fffdf8; --card2:#fbf9f3;
+    --ink:#1b1f1d; --muted:#5b6560; --faint:#8a938e;
+    --line:#ddd6c7; --line2:#cbc3ae;
+    --teal:#0f6656; --teal-bg:#dff0e9; --teal-ink:#0a4a3e;
+    --amber:#9a5b12; --amber-bg:#fbeed3;
+    --rust:#a33b1f; --rust-bg:#fbe7df;
+    --grey-bg:#e9e6dc; --grey-ink:#5b6560;
+    --code-bg:#17201d; --code-ink:#d7e8df; --code-dim:#8fb3a6; --code-amber:#f2c879;
+    --accent:#0f6656;
+    --shadow:0 1px 0 rgba(27,31,29,.06), 0 12px 32px rgba(27,31,29,.06);
+    --radius:14px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#121614; --bg2:#171c1a; --card:#1b211f; --card2:#1e2422;
+      --ink:#e9edea; --muted:#a7b0ab; --faint:#7d8882;
+      --line:#2e3633; --line2:#3a4440;
+      --teal:#5ec8b0; --teal-bg:#17362f; --teal-ink:#8fe0cc;
+      --amber:#e8b86a; --amber-bg:#3a2e16;
+      --rust:#f0937a; --rust-bg:#3d2119;
+      --grey-bg:#262c2a; --grey-ink:#a7b0ab;
+      --code-bg:#0c100f; --code-ink:#d7e8df; --code-dim:#7fa898; --code-amber:#f2c879;
+      --accent:#5ec8b0;
+      --shadow:0 1px 0 rgba(0,0,0,.3), 0 12px 32px rgba(0,0,0,.25);
+    }
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} *{transition:none!important} }
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Public Sans",system-ui,-apple-system,Segoe UI,sans-serif;font-size:16px;line-height:1.55}
+  a{color:var(--teal);text-underline-offset:3px}
+  a:hover{text-decoration-thickness:2px}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 20px 64px}
+  code,.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+  /* ---------- header / verdict ---------- */
+  header{padding:36px 0 0}
+  .topline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted)}
+  .topline .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);flex:none}
+  h1{font-family:"Source Serif 4",Georgia,serif;font-weight:900;font-size:clamp(34px,6vw,58px);line-height:1.02;letter-spacing:-.02em;margin:16px 0 12px;max-width:18ch}
+  .lede{font-size:clamp(17px,2.4vw,20px);line-height:1.5;color:var(--muted);max-width:68ch;margin:0}
+  .lede strong{color:var(--ink)}
+  .verdict{margin-top:28px;background:var(--ink);color:#f2f0e9;border-radius:18px;padding:26px 26px 22px;display:grid;grid-template-columns:1.25fr .75fr;gap:28px}
+  @media (prefers-color-scheme: dark){ .verdict{background:#e9edea;color:#141816} }
+  .verdict h2{font-family:"Source Serif 4",Georgia,serif;font-size:clamp(24px,3.4vw,32px);line-height:1.15;margin:0 0 10px;font-weight:900}
+  .verdict p{margin:0;opacity:.88;font-size:15.5px;line-height:1.6}
+  .verdict .count{border-left:1px solid rgba(128,128,128,.35);padding-left:24px;display:flex;flex-direction:column;justify-content:center;gap:2px}
+  .verdict .big{font-family:"IBM Plex Mono",monospace;font-size:52px;font-weight:600;line-height:1}
+  .verdict .big small{font-size:20px;opacity:.6}
+  .verdict .count span{font-size:13.5px;opacity:.75;line-height:1.45}
+  @media (max-width:700px){ .verdict{grid-template-columns:1fr} .verdict .count{border-left:none;border-top:1px solid rgba(128,128,128,.35);padding-left:0;padding-top:18px} }
+  /* ---------- target features ---------- */
+  section{margin-top:48px}
+  .sec-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  .sec-head h2{font-family:"Source Serif 4",Georgia,serif;font-size:28px;font-weight:900;letter-spacing:-.01em;margin:0}
+  .sec-head .n{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--teal);font-weight:600}
+  .sec-sub{color:var(--muted);max-width:72ch;margin:0 0 20px;font-size:15.5px}
+  .targets{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  @media (max-width:900px){ .targets{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:520px){ .targets{grid-template-columns:1fr} }
+  .target{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);text-align:left;cursor:pointer;font:inherit;color:inherit;width:100%}
+  .target:hover{border-color:var(--line2)}
+  .target:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .target .letter{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:13px;width:30px;height:30px;border-radius:8px;background:var(--teal-bg);color:var(--teal-ink);display:grid;place-items:center;margin-bottom:12px}
+  .target h3{margin:0 0 6px;font-size:16px;line-height:1.3}
+  .target p{margin:0;font-size:13.5px;color:var(--muted);line-height:1.5}
+  .target .hits{margin-top:12px;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--teal)}
+  .target.active{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal), var(--shadow)}
+  .hint{font-size:13px;color:var(--faint);margin-top:10px}
+  /* ---------- matrix ---------- */
+  .matrix{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--card);box-shadow:var(--shadow)}
+  .mrow{display:grid;grid-template-columns:1.55fr 1fr 1fr 1fr 1.25fr;gap:0;border-top:1px solid var(--line)}
+  .mrow:first-child{border-top:none}
+  .mrow.head{background:var(--bg2);font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted)}
+  .mrow.head .cell{padding:12px 14px;font-weight:600}
+  .mrow.head .cell b{color:var(--ink);font-size:13px}
+  .cell{padding:14px;border-left:1px solid var(--line);min-width:0}
+  .cell:first-child{border-left:none}
+  .proj{font-weight:700;font-size:15px;line-height:1.3}
+  .proj small{display:block;font-weight:400;color:var(--muted);font-size:12.5px;margin-top:3px;line-height:1.4}
+  .pill{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:999px;line-height:1.3;white-space:nowrap}
+  .pill.yes{background:var(--teal-bg);color:var(--teal-ink)}
+  .pill.part{background:var(--amber-bg);color:var(--amber)}
+  .pill.no{background:var(--grey-bg);color:var(--grey-ink)}
+  .pill.na{background:transparent;border:1px dashed var(--line2);color:var(--muted)}
+  .cell .note{display:block;font-size:12px;color:var(--muted);margin-top:5px;line-height:1.4}
+  .mrow.dim{opacity:.38}
+  .mrow.hl .cell.feat{background:var(--teal-bg)}
+  @media (prefers-color-scheme: dark){ .mrow.hl .cell.feat{background:#17362f} }
+  @media (max-width:760px){
+    .mrow,.mrow.head{display:block}
+    .mrow.head{display:none}
+    .mrow{padding:16px}
+    .cell{border-left:none;padding:6px 0;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+    .cell:first-child{display:block;padding-bottom:8px}
+    .cell::before{content:attr(data-label);font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--faint);width:118px;flex:none;font-weight:600}
+    .cell:first-child::before{content:none}
+  }
+  /* ---------- spotlights ---------- */
+  .spots{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:860px){ .spots{grid-template-columns:1fr} }
+  .spot{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:var(--shadow);display:flex;flex-direction:column}
+  .spot.wide{grid-column:1/-1}
+  .spot-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+  .spot h3{font-family:"Source Serif 4",Georgia,serif;font-size:22px;margin:0;line-height:1.2}
+  .spot .role{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--teal);font-weight:600;margin-bottom:6px}
+  .spot p{font-size:14.5px;color:var(--muted);line-height:1.6;margin:10px 0 0}
+  .spot p strong,.spot li strong{color:var(--ink)}
+  .spot ul{margin:10px 0 0;padding-left:18px;font-size:14.5px;color:var(--muted);line-height:1.6}
+  .codeblock{background:var(--code-bg);color:var(--code-ink);border-radius:12px;padding:16px 18px;margin-top:16px;font-family:"IBM Plex Mono",monospace;font-size:12.8px;line-height:1.7;overflow-x:auto;white-space:pre}
+  .codeblock .d{color:var(--code-dim)} .codeblock .a{color:var(--code-amber)}
+  .flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:10px;align-items:stretch;margin-top:16px}
+  .flow .step{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .flow .step b{display:block;font-size:13.5px;margin-bottom:5px}
+  .flow .step span{font-size:12.8px;color:var(--muted);line-height:1.5;display:block}
+  .flow .arrow{align-self:center;color:var(--faint);font-family:"IBM Plex Mono",monospace}
+  @media (max-width:700px){ .flow{grid-template-columns:1fr} .flow .arrow{transform:rotate(90deg);justify-self:center} }
+  .fitline{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+  .fitline .fl{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);align-self:center;margin-right:2px}
+  .src{font-size:12.5px;color:var(--faint);margin-top:10px}
+  .src a{color:var(--muted)}
+  /* ---------- catalogue ---------- */
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .tab{font:inherit;font-size:13.5px;font-weight:600;padding:8px 14px;border-radius:999px;border:1px solid var(--line2);background:var(--card);color:var(--ink);cursor:pointer}
+  .tab.active{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  @media (prefers-color-scheme: dark){ .tab.active{background:#e9edea;color:#141816;border-color:#e9edea} }
+  .tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  @media (max-width:980px){ .cards{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:620px){ .cards{grid-template-columns:1fr} }
+  .pcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
+  .pcard h3{margin:0;font-size:16.5px;line-height:1.3}
+  .pcard h3 a{color:var(--ink);text-decoration:none}
+  .pcard h3 a:hover{text-decoration:underline;text-decoration-color:var(--teal)}
+  .pcard .cat{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--teal);font-weight:600;margin-bottom:8px}
+  .pcard p{font-size:13.8px;color:var(--muted);line-height:1.55;margin:8px 0 0}
+  .pcard .how{font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.6;color:var(--muted);margin-top:10px;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;overflow-wrap:anywhere}
+  .pcard .fitline{margin-top:12px;padding-top:12px}
+  .pcard.hidden{display:none}
+  /* ---------- synthesis / caveats ---------- */
+  .synth{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px;box-shadow:var(--shadow)}
+  .assembly{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px}
+  @media (max-width:860px){ .assembly{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:480px){ .assembly{grid-template-columns:1fr} }
+  .piece{border:1px dashed var(--line2);border-radius:12px;padding:14px;background:var(--card2)}
+  .piece .from{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--teal)}
+  .piece b{display:block;margin:6px 0 4px;font-size:14.5px}
+  .piece span{font-size:13px;color:var(--muted);line-height:1.5;display:block}
+  .plus-note{margin-top:14px;font-size:14.5px;color:var(--muted);line-height:1.6}
+  .plus-note strong{color:var(--ink)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:860px){ .two{grid-template-columns:1fr} }
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:var(--shadow)}
+  .panel h3{margin:0 0 10px;font-size:17px}
+  .panel ul{margin:0;padding-left:18px;font-size:14px;color:var(--muted);line-height:1.65}
+  .panel li{margin-bottom:8px}
+  .panel li strong{color:var(--ink)}
+  /* ---------- sources ---------- */
+  .sources{columns:2;column-gap:32px;font-size:13.5px}
+  @media (max-width:700px){ .sources{columns:1} }
+  .sources li{margin-bottom:9px;break-inside:avoid;color:var(--muted)}
+  .sources ul{padding-left:18px;margin:0}
+  footer{margin-top:52px;border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:var(--faint);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="topline"><span class="dot"></span><span>Code prior art · searched 29 Oct 2026 · FNNDSC org, PyPI, GitHub &amp; DeepWiki indexes</span></div>
+  <h1>FastAPI services that give you a CLI over HTTP</h1>
+  <p class="lede">You asked for something in code, close to <strong>mush</strong> (the input interactive shell) and <strong>rcli</strong> (the reverse interactive shell): a FastAPI service that takes shell commands as jobs, delivers files into a run, offers a live prompt, and rendezvous through a mailbox a separate executor polls. Here is what actually exists — project by project, endpoint by endpoint.</p>
+
+  <div class="verdict">
+    <div>
+      <h2>No single project combines all four.</h2>
+      <p>The pieces exist, but in different codebases, and never together. AutoGDB has the exact mailbox — for GDB, not a shell. term-wrapper has the cleanest interactive prompt. agent-infra/sandbox has jobs, files and PTY sessions in one service, but executes directly with no polling executor. The combination itself appears to be novel.</p>
+    </div>
+    <div class="count">
+      <div class="big">0<small> / 14</small></div>
+      <span>projects catalogued hit (a) + (b) + (c) + (d) together. Best single score: agent-infra/sandbox at 3 of 4 — it is missing only the mailbox.</span>
+    </div>
+  </div>
+</header>
+
+<section id="target">
+  <div class="sec-head"><span class="n">01</span><h2>The target, in four parts</h2></div>
+  <p class="sec-sub">The four features your design needs at once. Select one to highlight every project in the matrix below that has it — in full or in part.</p>
+  <div class="targets" role="group" aria-label="Filter matrix by feature">
+    <button class="target" data-feat="0" aria-pressed="false">
+      <span class="letter">(a)</span>
+      <h3>Shell jobs from an external party</h3>
+      <p>An outside submitter posts shell commands as jobs to the service — not commands typed at a prompt the server itself owns.</p>
+      <span class="hits" data-hits="0"></span>
+    </button>
+    <button class="target" data-feat="1" aria-pressed="false">
+      <span class="letter">(b)</span>
+      <h3>Files delivered into a run</h3>
+      <p>Files arrive as an input to the job or session — upload, multipart, or an archive in — not just a file browser next to a terminal.</p>
+      <span class="hits" data-hits="1"></span>
+    </button>
+    <button class="target" data-feat="2" aria-pressed="false">
+      <span class="letter">(c)</span>
+      <h3>Interactive shell prompt over HTTP</h3>
+      <p>A persistent prompt you can type into — PTY session, stdin write, output you can poll or stream — served over HTTP / WebSocket.</p>
+      <span class="hits" data-hits="2"></span>
+    </button>
+    <button class="target" data-feat="3" aria-pressed="false">
+      <span class="letter">(d)</span>
+      <h3>Mailbox / rendezvous</h3>
+      <p>The submitter posts a command and a <em>separate</em> executor polls for it, runs it, and posts the result back. The server itself does not execute.</p>
+      <span class="hits" data-hits="3"></span>
+    </button>
+  </div>
+  <p class="hint">This distinction matters throughout: several projects below poll <em>output</em> from a server-owned PTY. That is not (d). In (d), the polling side is the executor.</p>
+</section>
+
+<section id="matrix">
+  <div class="sec-head"><span class="n">02</span><h2>Fit matrix</h2></div>
+  <p class="sec-sub">All 14 catalogued projects, scored against (a)–(d). Eleven come straight from the research report’s fit table; the last three (FedWiki, nagi, Easy-Web-Vibecoding) are scored from the same report’s project notes. “Partial” keeps the report’s own hedge — read the note under each score before treating it as a match.</p>
+  <div class="matrix" id="matrixEl" role="table" aria-label="Project fit against features a to d"></div>
+</section>
+
+<section id="spotlights">
+  <div class="sec-head"><span class="n">03</span><h2>The nearest matches, in code</h2></div>
+  <p class="sec-sub">One spotlight per piece of the puzzle — the four codebases the target would be assembled from, plus pfmdb, the FNNDSC precedent for exposing a CLI over HTTP.</p>
+  <div class="spots">
+
+    <article class="spot wide">
+      <div class="spot-top">
+        <div>
+          <div class="role">CLOSEST TO (d) — THE ONLY EXACT MAILBOX FOUND</div>
+          <h3>AutoGDB</h3>
+        </div>
+        <span class="pill yes">(d) exact</span>
+      </div>
+      <p>An AI-assisted GDB debugging tool whose FastAPI server is purely a hub between an LLM agent and a GDB session. The instruction queue, the polling executor, and the callback result are all there — <strong>verbatim the musings rendezvous shape</strong> — except the commands are GDB commands, there is no shell, no file delivery, and no interactive prompt (the GDB prompt is owned by the plugin; the agent never types into it).</p>
+      <div class="flow">
+        <div class="step"><b>1 · Agent submits &amp; blocks</b><span><code>POST /instruct/?instruction=&lt;gdb command&gt;</code> appends to <code>instructions_queue</code> (a FIFO list), then <code>await_callback()</code> polls <code>results_dict</code> every 3&nbsp;s — with no timeout.</span></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="step"><b>2 · Executor polls &amp; runs</b><span>The GDB plugin (<code>plugin/gpt.py</code>, synchronous <code>requests</code> polling) calls <code>GET /get-instruction</code> → <code>pop(0)</code>, or 404 if the queue is empty, and executes the command inside GDB.</span></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="step"><b>3 · Result posted back</b><span><code>POST /see-callback/ {"instruction": str, "response": base64}</code>. The server decodes base64, strips ANSI escapes, truncates output over 2,040 chars, stores <code>results_dict[instruction]</code> — and the blocked <code>/instruct/</code> call returns it.</span></div>
+      </div>
+      <div class="codeblock"><span class="d"># also on the server</span>
+GET /add-instruction/        GET /test-connection-gdb|cli
+GET /                        <span class="d"># HTML form for manual submission</span>
+<span class="d"># deps: fastapi 0.108.0 · uvicorn 0.25.0 · httpx 0.26.0</span>
+<span class="a">uvicorn server.main:app --host 0.0.0.0 --port 5000</span></div>
+      <div class="fitline"><span class="fl">FIT</span><span class="pill part">(a) GDB only</span><span class="pill no">(b) No</span><span class="pill no">(c) No</span><span class="pill yes">(d) Yes — exact</span></div>
+      <p class="src">Source: <a href="https://deepwiki.com/aixiao0621/AutoGDB/5-fastapi-server">DeepWiki — AutoGDB FastAPI server</a> (index). ⚠ Canonical repo URL unverified — see Open questions.</p>
+    </article>
+
+    <article class="spot">
+      <div class="spot-top">
+        <div>
+          <div class="role">CLOSEST TO (c) — CLEANEST PTY API</div>
+          <h3>term-wrapper</h3>
+        </div>
+        <span class="pill yes">(c) strongest</span>
+      </div>
+      <p>PTY-based terminal emulation with a FastAPI backend (REST + WebSocket), a session manager, a Python CLI client and library, and an optional xterm.js frontend. Tested with <strong>bash, the Python REPL, vim / less / nano, htop, and the <code>claude</code> CLI</strong>.</p>
+      <div class="codeblock">POST /sessions  {"command": ["python3", "examples/simple_tui.py"],
+                 "rows": 24, "cols": 80}
+     <span class="d">→ {"session_id": "…"}</span>
+GET  /sessions/{id}/output   <span class="d"># raw</span>
+GET  /sessions/{id}/screen   <span class="d"># parsed 2D buffer</span>
+POST /sessions/{id}/input    {"data": "+"}
+POST /sessions/{id}/resize
+DELETE /sessions/{id}
+WS   /sessions/{id}/ws</div>
+      <p>The Python client mirrors it: <code>create_session(command=["bash"])</code>, <code>write_input(session_id, "ls -la\r")</code>, <code>get_output(…, clear=True)</code>, <code>get_text(strip_ansi_codes=True)</code>, <code>wait_for_text</code>, <code>wait_for_quiet</code>, <code>get_new_lines</code> / <code>mark_read</code>.</p>
+      <p><strong>The catch for (d):</strong> the server owns and runs the PTY; the <em>client</em> polls the output. That is output-polling, not an executor polling a mailbox. And there is <strong>no file-delivery endpoint</strong>.</p>
+      <div class="fitline"><span class="fl">FIT</span><span class="pill part">(a) Session only</span><span class="pill no">(b) No</span><span class="pill yes">(c) Yes</span><span class="pill no">(d) No</span></div>
+      <p class="src">Source: <a href="https://pypi.org/project/term-wrapper/0.7.4/">PyPI — term-wrapper 0.7.4</a> (index); source named in PyPI text: <a href="https://github.com/rom1504/term-wrapper.git">github.com/rom1504/term-wrapper</a>.</p>
+    </article>
+
+    <article class="spot">
+      <div class="spot-top">
+        <div>
+          <div class="role">CLOSEST OVERALL — (a) + (b) + (c) IN ONE SERVICE</div>
+          <h3>agent-infra/sandbox</h3>
+        </div>
+        <span class="pill yes">3 of 4</span>
+      </div>
+      <p>An all-in-one AI-agent sandbox — browser, shell, file, MCP, VS Code server, Jupyter, terminal — in a single container, with a REST API implemented as FastAPI (OpenAPI). Persistent PTY sessions with stdin write and SSE streaming, plus real file upload/download.</p>
+      <div class="codeblock"><span class="d"># shell</span>
+POST /v1/shell/exec            POST /v1/shell/view
+POST /v1/shell/sessions/create GET  /v1/shell/sessions
+POST /v1/shell/write  <span class="d"># stdin</span>   POST /v1/shell/kill
+<span class="d"># file</span>
+POST /v1/file/read|write|replace|search|find|list
+POST /v1/file/upload  <span class="d"># multipart</span>
+GET  /v1/file/download</div>
+      <p>Text and base64 binary files, with streaming upload/download. <strong>The one missing piece is (d):</strong> the server executes directly; the client polls or views session output. There is no separate executor process polling a mailbox.</p>
+      <div class="fitline"><span class="fl">FIT</span><span class="pill yes">(a) Yes</span><span class="pill yes">(b) Yes</span><span class="pill yes">(c) Yes</span><span class="pill no">(d) No</span></div>
+      <p class="src">Source: <a href="https://deepwiki.com/agent-infra/sandbox/4-features-and-services">DeepWiki — agent-infra/sandbox features &amp; services</a> (index). ⚠ Exact process boundary unverified — see Open questions.</p>
+    </article>
+
+    <article class="spot">
+      <div class="spot-top">
+        <div>
+          <div class="role">FNNDSC — LITERAL “CLI OVER HTTP” IN FASTAPI</div>
+          <h3>FNNDSC/pfmdb</h3>
+        </div>
+        <span class="pill part">(a) partial</span>
+      </div>
+      <p>“A FastAPI interface to pfmongo — API endpoints mirror pfmongo CLI groups and subgroups.” A FastAPI REST service over a Mongo server, bundled with mongo + mongo-express, on <code>:8025</code> with Swagger at <code>:8025/docs</code>. Last commit shown 9 Dec 2024; 0 stars.</p>
+      <div class="codeblock">POST /pfmongo/cli/{cmd}
+  <span class="d">cmd: str = Path(..., encode_value_as_path=True)</span>
+  <span class="d">query: database, collection,</span>
+  <span class="d">       handler = "smash" | "smashes"</span>
+  <span class="a">→ await pfmdb_controller.cmd_exec(cmd, database,</span>
+  <span class="a">    collection, handler)  →  SmashesResponse</span>
+<span class="d"># “smash” = internal calls · “smashes” = remote IPC</span>
+<span class="d"># to an embedded smash server — same request, sync</span></div>
+      <p>Plus REST mirrors of the CLI groups: <code>GET /pfmongo</code> (databases), <code>GET/DELETE /pfmongo/{database}</code>, <code>…/{collection}</code>, <code>…/{document}</code>, <code>POST /pfmongo/{database}/{collection}/search</code>, and <code>GET /help</code> (the pfmongo <code>--help</code>).</p>
+      <p>It is the closest literal precedent for “expose a CLI over HTTP” — but the CLI is only <code>pfmongo</code>: <strong>synchronous, no shell, no prompt, no queue, no polling, no file-into-run endpoint</strong> in the router inspected (<code>File</code> / <code>UploadFile</code> / <code>FileResponse</code> are imported, but the routes shown are DB CRUD / search / cli / help).</p>
+      <div class="fitline"><span class="fl">FIT</span><span class="pill part">(a) pfmongo only</span><span class="pill no">(b) No</span><span class="pill no">(c) No</span><span class="pill no">(d) No</span></div>
+      <p class="src">Sources: <a href="https://github.com/FNNDSC/pfmdb">github.com/FNNDSC/pfmdb</a> and its <a href="https://github.com/FNNDSC/pfmdb/blob/main/pfmdb/routes/pfmdb_router.py">router file</a> — both verified live 2026-10-29.</p>
+    </article>
+
+    <article class="spot">
+      <div class="spot-top">
+        <div>
+          <div class="role">CLEANEST ONE-SHOT SHELL ENDPOINT</div>
+          <h3>host-terminal-mcp</h3>
+        </div>
+        <span class="pill yes">(a) one-shot</span>
+      </div>
+      <p>An MCP server for running host terminal commands (originally for Claude), with an alternative FastAPI HTTP transport — <code>http_server.py</code> and an <code>executor.py</code> built on asyncio subprocesses. Permission modes: allowlist / blocklist / <code>ask</code>.</p>
+      <div class="codeblock">POST /execute {"command": "docker compose ps",
+               "working_directory": "/path/to/project"}
+  <span class="d">→ {status, stdout, stderr, exit_code,</span>
+  <span class="d">   timed_out, truncated, working_directory}</span>
+GET  /health     POST /cd     GET /cwd
+GET  /permissions</div>
+      <p>Fully synchronous and one-shot: no persistent prompt (only <code>cd</code> / <code>cwd</code> state persists), no files, no mailbox. It is the tidiest reference for the single <code>POST /execute</code> shape, and nothing more.</p>
+      <div class="fitline"><span class="fl">FIT</span><span class="pill yes">(a) Yes, one-shot</span><span class="pill no">(b) No</span><span class="pill no">(c) No</span><span class="pill no">(d) No</span></div>
+      <p class="src">Source: <a href="https://pypi.org/project/host-terminal-mcp/0.2.5/">PyPI — host-terminal-mcp 0.2.5</a> (index); repo named there: <a href="https://github.com/ankitag-in/host-terminal-mcp.git">github.com/ankitag-in/host-terminal-mcp</a>. ⚠ Org spelling unverified — see Open questions.</p>
+    </article>
+
+  </div>
+</section>
+
+<section id="catalogue">
+  <div class="sec-head"><span class="n">04</span><h2>Full catalogue</h2></div>
+  <p class="sec-sub">Everything else the research found, grouped the way it was searched — including the FNNDSC near-misses that are not FastAPI at all, so they are not mistaken for FastAPI prior art.</p>
+  <div class="tabs" role="group" aria-label="Filter catalogue by group">
+    <button class="tab active" data-cat="all">All projects</button>
+    <button class="tab" data-cat="fnndsc">FNNDSC</button>
+    <button class="tab" data-cat="terminal">WebSocket terminals</button>
+    <button class="tab" data-cat="shell">Shell-over-HTTP</button>
+    <button class="tab" data-cat="agent">Agent / tool servers</button>
+  </div>
+  <div class="cards" id="cardsEl"></div>
+</section>
+
+<section id="synthesis">
+  <div class="sec-head"><span class="n">05</span><h2>What the target would be assembled from</h2></div>
+  <p class="sec-sub">The report’s synthesis: the combination looks novel, but every individual mechanism has a working reference implementation.</p>
+  <div class="synth">
+    <div class="assembly">
+      <div class="piece"><span class="from">(d) ← AutoGDB</span><b>Queue / poll / callback</b><span>The mailbox shape itself: FIFO instruction queue, executor polling, base64 result posted back.</span></div>
+      <div class="piece"><span class="from">(c) ← term-wrapper</span><b>Session / input / output PTY API</b><span><code>POST /sessions</code>, <code>POST …/input</code>, <code>GET …/output</code> and <code>…/screen</code>, over REST + WebSocket.</span></div>
+      <div class="piece"><span class="from">(b) ← agent-infra/sandbox</span><b>File upload / download</b><span>Multipart <code>POST /v1/file/upload</code> and <code>GET /v1/file/download</code> alongside the shell API.</span></div>
+      <div class="piece"><span class="from">(a) ← host-terminal-mcp</span><b><code>POST /execute</code></b><span>The one-shot shell job endpoint, returning stdout, stderr and exit code.</span></div>
+    </div>
+    <p class="plus-note">Two FNNDSC precedents complete the picture: <strong>pfcon’s zip-in / zip-out</strong> is the file-delivery precedent from your own ecosystem (submit a job, get results back as an archive — but Flask, not FastAPI), and <strong>pfmdb’s <code>POST /pfmongo/cli/{cmd}</code></strong> is the precedent for exposing a CLI verbatim over HTTP — one product’s CLI, synchronously.</p>
+  </div>
+</section>
+
+<section id="caveats">
+  <div class="sec-head"><span class="n">06</span><h2>Excluded — and what could not be verified</h2></div>
+  <div class="two">
+    <div class="panel">
+      <h3>Deliberately not counted</h3>
+      <ul>
+        <li><strong>Generic web terminals — not FastAPI services:</strong> ttyd, wetty, Jupyter, code-server, Portainer. No FastAPI reimplementation of them was found that adds (a)–(d).</li>
+        <li><strong>FastAPI dev CLIs:</strong> <code>fastapi-mongo-setup</code> (scaffolds FastAPI + Mongo projects, with interactive setup prompts) and the <code>fastapi</code> / <code>fastapi-cli</code> tooling family are CLIs <em>for developing</em> FastAPI apps — not services providing CLI interactivity over HTTP.</li>
+        <li><strong>Container-local shells:</strong> <code>just shell</code> (the Django Python REPL in ChRIS_ultron_backEnd) is a local shell, not an HTTP service.</li>
+        <li><strong>A generic FastAPI job POST</strong> — <code>POST http://127.0.0.1:8000/job {"command": "echo \"Hello World\""}</code> to a dispatcher whose worker nodes run it — is a plain job queue, not CLI interactivity, and was excluded as prior art.</li>
+        <li><strong>WebShell</strong> (SudevOP1) describes itself as a “Web SSH Terminal (PTY) + Job Runner” with FastAPI + pty/ptyprocess + xterm.js + saved jobs, but is framed as a 6–8-hour timeboxed goal/spec. Not cited as established prior art without reading its code.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Open questions — stated plainly</h3>
+      <ul>
+        <li><strong>AutoGDB has no single verified repo URL.</strong> DeepWiki uses <code>aixiao0621/AutoGDB</code>, while its getting-started text gives <code>github.com/retr0reg/AutoGDB</code> — a fork/rename discrepancy. Re-check the repo before citing one canonical URL.</li>
+        <li><strong>host-terminal-mcp org spelling is unverified.</strong> Latest PyPI text gives <code>ankitag-in/host-terminal-mcp</code>; older PyPI/Glama text gives <code>ankitaa186</code> variants.</li>
+        <li><strong>agent-infra/sandbox process boundary unverified:</strong> the DeepWiki source says the REST API is implemented as FastAPI, but the container also bundles VNC / VS Code / Jupyter / terminal components, so whether the in-container service is itself the FastAPI app was not verified from code.</li>
+        <li><strong>FNNDSC coverage:</strong> org searches for <code>pfmongo</code> (2 repos: pfmongo, pfmdb) and <code>repl</code> (1 repo: chili) found nothing else; pman / pfcon are Flask-era. Whether any other FNNDSC service uses FastAPI for shell-like interaction remains open beyond those searches.</li>
+        <li><strong>The headline is a negative result</strong> over the indexed web — FNNDSC org search (live) plus PyPI / GitHub / DeepWiki searches for FastAPI PTY, shell-over-HTTP, MCP tool servers and mailbox polling. Confidence is high within that searched surface, but a private or obscure repo could still exist. It is not a proof of non-existence.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="sources">
+  <div class="sec-head"><span class="n">07</span><h2>Sources</h2></div>
+  <p class="sec-sub">“Verified live” means the page itself was read on 2026-10-29; “index” means the claim rests on a search / package index entry, as the research report records it.</p>
+  <div class="sources"><ul>
+    <li>FNNDSC/pfmdb (verified live) — <a href="https://github.com/FNNDSC/pfmdb">github.com/FNNDSC/pfmdb</a></li>
+    <li>pfmdb router (verified live) — <a href="https://github.com/FNNDSC/pfmdb/blob/main/pfmdb/routes/pfmdb_router.py">pfmdb/routes/pfmdb_router.py</a></li>
+    <li>FNNDSC pfmongo on Libraries.io (index) — <a href="https://libraries.io/pypi/pfmongo/0.9.116">libraries.io/pypi/pfmongo/0.9.116</a></li>
+    <li>FNNDSC/chili (verified live) — <a href="https://github.com/FNNDSC/chili">github.com/FNNDSC/chili</a></li>
+    <li>FNNDSC pfcon on PyPI (index) — <a href="https://pypi.org/project/pfcon/2.2.0.2/">pypi.org/project/pfcon/2.2.0.2</a></li>
+    <li>python-pfconclient on PyPI (index) — <a href="https://pypi.org/project/python-pfconclient/1.0.0/">pypi.org/project/python-pfconclient/1.0.0</a></li>
+    <li>pf-family /api/v1/cmd docs (index) — <a href="https://docs.massopen.cloud/en/archive-20220323/research/Debugging-ChRIS-using-pfcon.html">docs.massopen.cloud — Debugging ChRIS using pfcon</a></li>
+    <li>term-wrapper on PyPI (index) — <a href="https://pypi.org/project/term-wrapper/0.7.4/">pypi.org/project/term-wrapper/0.7.4</a></li>
+    <li>webterm on PyPI (index) — <a href="https://pypi.org/project/webterm/">pypi.org/project/webterm</a></li>
+    <li>FedWiki terminal plugin (index) — <a href="https://plugin.fedwiki.club/terminal-plugin.html">plugin.fedwiki.club/terminal-plugin</a></li>
+    <li>nagi system overview (index) — <a href="https://deepwiki.com/shi3z/nagi/3.1-system-overview">deepwiki.com/shi3z/nagi</a></li>
+    <li>Easy-Web-Vibecoding (index) — <a href="https://github.com/DarranLiu/Easy-Web-Vibecoding">github.com/DarranLiu/Easy-Web-Vibecoding</a></li>
+    <li>agent-infra/sandbox features (index) — <a href="https://deepwiki.com/agent-infra/sandbox/4-features-and-services">deepwiki.com/agent-infra/sandbox</a></li>
+    <li>host-terminal-mcp on PyPI (index) — <a href="https://pypi.org/project/host-terminal-mcp/0.2.5/">pypi.org/project/host-terminal-mcp/0.2.5</a></li>
+    <li>terminal-control-mcp on PyPI (index) — <a href="https://pypi.org/project/terminal-control-mcp/1.0.1/">pypi.org/project/terminal-control-mcp/1.0.1</a></li>
+    <li>terminal-control-mcp web interface (index) — <a href="https://deepwiki.com/wehnsdaefflae/terminal-control-mcp/2.4-web-interface">deepwiki.com/wehnsdaefflae/terminal-control-mcp</a></li>
+    <li>AutoGDB FastAPI server (index) — <a href="https://deepwiki.com/aixiao0621/AutoGDB/5-fastapi-server">deepwiki.com/aixiao0621/AutoGDB</a></li>
+    <li>OpenHands runtime architecture (index) — <a href="https://deepwiki.com/anhnh2002/OpenHands/2.4-runtime-system-architecture">deepwiki.com/anhnh2002/OpenHands</a></li>
+  </ul></div>
+</section>
+
+<footer>
+  <span>Concrete code prior art for the musings design — mush (input interactive shell) and rcli (reverse interactive shell).</span>
+  <span>Research snapshot: 29 Oct 2026 · Sources as recorded in the research report; hedges carried, nothing added.</span>
+</footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+  // Fit values: 2 = yes, 1 = partial / qualified, 0 = no, -1 = not established / not documented
+  var PROJECTS = [
+    {name:"agent-infra/sandbox", sub:"All-in-one agent sandbox · FastAPI REST", cat:"agent", catLabel:"AGENT / TOOL SERVER",
+     fit:[2,2,2,0], notes:["Yes","Yes — multipart","Yes — PTY + stdin","No — direct execution"],
+     desc:"Browser, shell, file, MCP, VS Code server, Jupyter and terminal in one container. PTY sessions with persistence, reuse and SSE streaming.",
+     how:"POST /v1/shell/exec · /view · /sessions/create · /write (stdin) · /kill — POST /v1/file/upload · GET /v1/file/download",
+     url:"https://deepwiki.com/agent-infra/sandbox/4-features-and-services", urlLabel:"DeepWiki — features & services"},
+    {name:"AutoGDB", sub:"AI-assisted GDB debugging · FastAPI hub", cat:"agent", catLabel:"AGENT / TOOL SERVER",
+     fit:[1,0,0,2], notes:["GDB commands only","No","No","Yes — exact queue/poll/callback"],
+     desc:"The only exact mailbox found: an instruction queue, a GDB plugin polling for work, and results posted back by callback. No shell, no files, no prompt.",
+     how:"POST /instruct/ → queue · GET /get-instruction → pop(0) · POST /see-callback/ {response: base64}",
+     url:"https://deepwiki.com/aixiao0621/AutoGDB/5-fastapi-server", urlLabel:"DeepWiki — FastAPI server"},
+    {name:"term-wrapper", sub:"PTY terminal emulation · FastAPI REST + WS", cat:"terminal", catLabel:"WEBSOCKET TERMINAL",
+     fit:[1,0,2,0], notes:["Session command only","No","Yes — REST + WS PTY","No — client polls PTY output"],
+     desc:"Session manager, Python CLI client and library, optional xterm.js frontend. Tested with bash, Python REPL, vim/less/nano, htop, claude CLI.",
+     how:"POST /sessions · GET …/output · GET …/screen · POST …/input · WS …/ws",
+     url:"https://pypi.org/project/term-wrapper/0.7.4/", urlLabel:"PyPI — term-wrapper 0.7.4"},
+    {name:"FNNDSC/pfmdb", sub:"FastAPI interface to pfmongo · :8025", cat:"fnndsc", catLabel:"FNNDSC",
+     fit:[1,0,0,0], notes:["Partial — pfmongo only, sync","No","No","No"],
+     desc:"API endpoints mirror the pfmongo CLI groups and subgroups. Bundled with mongo + mongo-express; Swagger at :8025/docs. Last commit shown 9 Dec 2024, 0 stars.",
+     how:"POST /pfmongo/cli/{cmd} · GET /help · GET/DELETE /pfmongo/{database}/{collection}/{document}",
+     url:"https://github.com/FNNDSC/pfmdb", urlLabel:"github.com/FNNDSC/pfmdb"},
+    {name:"FNNDSC pfcon / pman / pfioh", sub:"Job + file delivery · Flask, not FastAPI", cat:"fnndsc", catLabel:"FNNDSC — NOT FASTAPI",
+     fit:[1,2,0,1], notes:["Partial — container jobs","Yes — zip in / zip out","No","Partial — submit + poll job state"],
+     desc:"pfcon pushes local data to a remote location via pfioh, runs a containerised process there via pman, and copies results back. Job state and stdout/stderr can be queried. The best file-delivery precedent in this set — but explicitly Flask-based, so not FastAPI prior art.",
+     how:"pfconclient <url>/api/v1/ <jid> run|submit --cmd_args … --image fnndsc/pl-simplefsapp --execshell python3",
+     url:"https://pypi.org/project/pfcon/2.2.0.2/", urlLabel:"PyPI — pfcon 2.2.0.2"},
+    {name:"host-terminal-mcp", sub:"MCP server with FastAPI HTTP transport", cat:"shell", catLabel:"SHELL-OVER-HTTP",
+     fit:[2,0,0,0], notes:["Yes — POST /execute","No","No — cd/cwd state only","No"],
+     desc:"Runs host terminal commands via asyncio subprocesses, with allowlist / blocklist / ask permission modes. Synchronous and one-shot.",
+     how:"POST /execute {command, working_directory} → {stdout, stderr, exit_code, …} · POST /cd · GET /cwd",
+     url:"https://pypi.org/project/host-terminal-mcp/0.2.5/", urlLabel:"PyPI — host-terminal-mcp 0.2.5"},
+    {name:"webterm", sub:"Web terminal · FastAPI + xterm.js", cat:"terminal", catLabel:"WEBSOCKET TERMINAL",
+     fit:[1,1,2,0], notes:["Via terminal only","Partial — file explorer","Yes — WS xterm.js","No"],
+     desc:"Fully-featured browser terminal: themes, live CPU/memory/GPU, file explorer (browse, upload, download), clipboard, mouse passthrough, optional token auth (WEBTERM_TOKEN), localhost-only by default on 127.0.0.1:8000.",
+     how:"webterm → 127.0.0.1:8000 · WebSocket + xterm.js · file explorer up/download",
+     url:"https://pypi.org/project/webterm/", urlLabel:"PyPI — webterm"},
+    {name:"terminal-control-mcp", sub:"MCP tools + FastAPI web UI over tmux", cat:"agent", catLabel:"AGENT / TOOL SERVER",
+     fit:[1,-1,2,0], notes:["Via tmux sessions","Not documented","Yes — tmux + WS + await_output","No"],
+     desc:"FastMCP tools plus a FastAPI web interface for tmux/libtmux sessions, with manual browser input that does not interfere with agent control. WebSocket PTY streams tmux output (pipe-pane primary, direct capture fallback).",
+     how:"open_terminal · send_input · get_screen_content · await_output · /session/{id} · WS PTY route",
+     url:"https://pypi.org/project/terminal-control-mcp/1.0.1/", urlLabel:"PyPI — terminal-control-mcp 1.0.1"},
+    {name:"OpenHands action-execution server", sub:"FastAPI server inside the sandbox container", cat:"agent", catLabel:"AGENT / TOOL SERVER",
+     fit:[2,2,-1,0], notes:["Yes (actions)","Yes — upload/download","Not established","No — direct execution"],
+     desc:"An ActionExecutionServer orchestrated by the agent runtime. Interactive prompt not established from the source the research read.",
+     how:"/execute_action · /alive · /list_files · /upload_file · /download_files · /vscode/connection_token",
+     url:"https://deepwiki.com/anhnh2002/OpenHands/2.4-runtime-system-architecture", urlLabel:"DeepWiki — runtime architecture"},
+    {name:"FNNDSC/chili", sub:"Node.js CLI REPL for ChRIS · not a service", cat:"fnndsc", catLabel:"FNNDSC — NOT FASTAPI",
+     fit:[0,0,1,0], notes:["No — ChRIS API commands","No","Prompt, but local","No"],
+     desc:"A TypeScript / Commander.js standalone CLI and reusable library (src/commands, src/models, src/views) for the ChRIS REST API. The actual FNNDSC “REPL” — but it runs on the user's own terminal and is not served over HTTP.",
+     how:"npm install -g @fnndsc/chili · chili connect <URL> · chili plugins list · chili files list --path …",
+     url:"https://github.com/FNNDSC/chili", urlLabel:"github.com/FNNDSC/chili"},
+    {name:"FNNDSC/pfmongo", sub:"The CLI pfmdb mirrors · not a service", cat:"fnndsc", catLabel:"FNNDSC — CLIENT SIDE",
+     fit:[0,0,0,0], notes:["No (local CLI)","No (local --file)","No","No"],
+     desc:"A class-based module (and script) to interact with a docker-compose managed MongoDB — a Python client/module (CLI and API). Useful prior art only for the “mirror CLI groups as HTTP routes” design; it is the client-side half of the pfmdb pattern.",
+     how:"pfmongo database connect … · collection connect … · document add --file …",
+     url:"https://libraries.io/pypi/pfmongo/0.9.116", urlLabel:"Libraries.io — pfmongo 0.9.116"},
+    {name:"FedWiki terminal plugin", sub:"Minimal FastAPI PTY service", cat:"terminal", catLabel:"WEBSOCKET TERMINAL",
+     fit:[1,0,2,0], notes:["Via the shell itself","No","Yes","No"],
+     desc:"A small FastAPI service that owns the PTYs, keyed by session name. Sessions outlive a WebSocket and survive reload, like tmux. Modes: display, run (capture stdout/stderr/exit code), terminal (attach interactive xterm).",
+     how:"@app.websocket(\"/pty/{session}\") · spawn_zsh(session) · bridge(ws, fd) · xterm.js AttachAddon/FitAddon",
+     url:"https://plugin.fedwiki.club/terminal-plugin.html", urlLabel:"plugin.fedwiki.club — terminal plugin"},
+    {name:"nagi", sub:"FastAPI mobile terminal", cat:"terminal", catLabel:"WEBSOCKET TERMINAL",
+     fit:[0,0,2,0], notes:["No","No","Yes","No"],
+     desc:"FastAPI main.py around a raw PTY: pty.openpty(), set_winsize, a login shell on the slave fd, bidirectional WebSocket bridging, xterm.js single-page frontend, token or Tailscale auth.",
+     how:"pty.openpty() · Popen([shell, \"-l\"], stdin=slave_fd) · os.read(master_fd, 4096) / os.write(master_fd, data)",
+     url:"https://deepwiki.com/shi3z/nagi/3.1-system-overview", urlLabel:"DeepWiki — nagi system overview"},
+    {name:"Easy-Web-Vibecoding", sub:"FastAPI + tmux + file APIs", cat:"terminal", catLabel:"WEBSOCKET TERMINAL",
+     fit:[1,1,2,0], notes:["Via terminal","Partial — file APIs","Yes","No"],
+     desc:"Browser/xterm.js over WebSocket through a FastAPI backend into a tmux session — Claude / Codex / OpenCode / shell — plus file, resource, presence and usage REST APIs. “A browser connection is not the terminal process.”",
+     how:"xterm.js → WS → FastAPI → tmux session · file / resource / presence / usage REST APIs",
+     url:"https://github.com/DarranLiu/Easy-Web-Vibecoding", urlLabel:"github.com/DarranLiu/Easy-Web-Vibecoding"}
+  ];
+  var LABELS = ["(a) Shell jobs","(b) Files into a run","(c) Interactive prompt","(d) Mailbox"];
+  function pill(v){
+    if(v===2) return '<span class="pill yes">Yes</span>';
+    if(v===1) return '<span class="pill part">Partial</span>';
+    if(v===-1) return '<span class="pill na">Not est.</span>';
+    return '<span class="pill no">No</span>';
+  }
+  function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+
+  // ----- matrix: all 14 catalogued projects -----
+  var MATRIX_NAMES = ["FNNDSC/pfmdb","FNNDSC/pfmongo","FNNDSC/chili","FNNDSC pfcon / pman / pfioh","term-wrapper","webterm","agent-infra/sandbox","host-terminal-mcp","terminal-control-mcp","AutoGDB","OpenHands action-execution server","FedWiki terminal plugin","nagi","Easy-Web-Vibecoding"];
+  var matrixEl = document.getElementById("matrixEl");
+  var head = '<div class="mrow head" role="row"><div class="cell">Project</div>' +
+    LABELS.map(function(l,i){ return '<div class="cell"><b>'+l.split(" ")[0]+'</b> '+esc(l.slice(4))+'</div>'; }).join("") + '</div>';
+  var rowsHtml = MATRIX_NAMES.map(function(n){
+    var p = null;
+    for(var i=0;i<PROJECTS.length;i++){ if(PROJECTS[i].name===n){ p=PROJECTS[i]; break; } }
+    if(!p) return "";
+    var cells = p.fit.map(function(v,i){
+      var note = (p.notes[i]==="No" || p.notes[i]==="Yes") ? "" : '<span class="note">'+esc(p.notes[i])+'</span>';
+      return '<div class="cell feat" data-feat="'+i+'" data-label="'+esc(LABELS[i])+'">'+pill(v)+note+'</div>';
+    }).join("");
+    return '<div class="mrow" role="row" data-name="'+esc(p.name)+'"><div class="cell"><div class="proj">'+esc(p.name)+'<small>'+esc(p.sub)+'</small></div></div>'+cells+'</div>';
+  }).join("");
+  matrixEl.innerHTML = head + rowsHtml;
+
+  // ----- feature highlight -----
+  var activeFeat = -1;
+  var targetBtns = document.querySelectorAll(".target");
+  // counts on the target cards
+  targetBtns.forEach(function(btn){
+    var f = parseInt(btn.getAttribute("data-feat"),10);
+    var full=0, part=0;
+    PROJECTS.forEach(function(p){ if(p.fit[f]===2) full++; else if(p.fit[f]===1) part++; });
+    var el = btn.querySelector(".hits");
+    if(el) el.textContent = full + " full · " + part + " partial — of " + PROJECTS.length + " catalogued";
+  });
+  function applyFeat(){
+    document.querySelectorAll("#matrixEl .mrow[data-name]").forEach(function(row){
+      row.classList.remove("dim","hl");
+      if(activeFeat<0) return;
+      var cell = row.querySelector('[data-feat="'+activeFeat+'"]');
+      var name = row.getAttribute("data-name");
+      var p = null;
+      for(var i=0;i<PROJECTS.length;i++){ if(PROJECTS[i].name===name){ p=PROJECTS[i]; break; } }
+      if(p && p.fit[activeFeat]>0){ row.classList.add("hl"); }
+      else { row.classList.add("dim"); }
+    });
+    targetBtns.forEach(function(b){
+      var on = parseInt(b.getAttribute("data-feat"),10)===activeFeat;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+  targetBtns.forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var f = parseInt(btn.getAttribute("data-feat"),10);
+      activeFeat = (activeFeat===f) ? -1 : f;
+      applyFeat();
+      if(activeFeat>=0){
+        document.getElementById("matrix").scrollIntoView({behavior:"smooth", block:"start"});
+      }
+    });
+  });
+
+  // ----- catalogue cards -----
+  var cardsEl = document.getElementById("cardsEl");
+  cardsEl.innerHTML = PROJECTS.map(function(p){
+    var fits = p.fit.map(function(v,i){
+      return '<span class="pill '+(v===2?"yes":v===1?"part":v===-1?"na":"no")+'">'+LABELS[i].split(" ")[0]+'</span>';
+    }).join(" ");
+    return '<article class="pcard" data-cat="'+p.cat+'">' +
+      '<div class="cat">'+esc(p.catLabel)+'</div>' +
+      '<h3><a href="'+p.url+'" target="_blank" rel="noopener">'+esc(p.name)+'</a></h3>' +
+      '<p>'+esc(p.desc)+'</p>' +
+      '<div class="how">'+esc(p.how)+'</div>' +
+      '<div class="fitline"><span class="fl">FIT</span>'+fits+'</div>' +
+      '<p class="src">Source: <a href="'+p.url+'" target="_blank" rel="noopener">'+esc(p.urlLabel)+'</a></p>' +
+      '</article>';
+  }).join("");
+  document.querySelectorAll(".tab").forEach(function(tab){
+    tab.addEventListener("click", function(){
+      document.querySelectorAll(".tab").forEach(function(t){ t.classList.remove("active"); });
+      tab.classList.add("active");
+      var cat = tab.getAttribute("data-cat");
+      document.querySelectorAll(".pcard").forEach(function(c){
+        c.classList.toggle("hidden", cat!=="all" && c.getAttribute("data-cat")!==cat);
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>
