@@ -3,7 +3,7 @@
 == v0.2.1 -- done
 
 * `mush` shell REPL over the job queue: each line becomes a `POST /jobs` submission, mush polls until the job succeeds or fails and prints its output; `cd` is held client-side and prefixed onto commands, relative to the poller's working directory; `--no-wait` submits without waiting.
-* `musings-server` console script: runs the service with uvicorn, honouring `MUSINGS_HOST` and `MUSINGS_PORT` (defaults 127.0.0.1:8000), so `uv pip install -e .` installs the server alongside `musings`, `musings-repl`, `musings-rcli-executor`, `musings-poller`, and `mush`.
+* `musings-server` console script: runs the service with uvicorn, honouring `MUSINGS_HOST` and `MUSINGS_PORT` (defaults 127.0.0.1:8000), so `uv pip install -e .` installs the server alongside `musings`, `rush`, `musings-rush-executor`, `musings-poller`, and `mush`.
 * `output_truncate` returns a modeled `TruncatedText` dataclass instead of a bare tuple, per the ChRONOS rule that non-primitive returns are modeled; both call sites updated.
 * ChRONOS Python style throughout; ruff-clean; 36 tests.
 
@@ -18,10 +18,10 @@
 
 == v0.2.0 -- done
 
-* `rcli` endpoint: synchronous rendezvous -- a submitter's POST blocks until an attached executor runs the command; response streamed as JSON lines (stdout/stderr chunks as produced) closed by the hostlib envelope; fail fast when no executor is attached; a stream ending without the envelope means unknown outcome.
-* REPL client in-repo (`musings-repl`): shell-like Python prompt whose lines become `/rcli` posts; client holds the working directory and intercepts `cd`; server clamps the working directory to the base directory.
-* `rcli` executor client (`musings-rcli-executor`): long-polls `/rcli/next`, runs commands through hostlib, streams chunks back, closes with the result envelope.
-* hostlib as the execution backend for the poller and the `rcli` executors, replacing the poller's bare shell invocation; the shell-wrap decision (wrap in `sh -c` vs split argv) is made per endpoint in musings, not in hostlib, which stays unextended.
+* `rush` endpoint: synchronous rendezvous -- a submitter's POST blocks until an attached executor runs the command; response streamed as JSON lines (stdout/stderr chunks as produced) closed by the hostlib envelope; fail fast when no executor is attached; a stream ending without the envelope means unknown outcome.
+* rush client in-repo (`rush`): shell-like Python prompt whose lines become `/rush` posts; client holds the working directory and intercepts `cd`; server clamps the working directory to the base directory.
+* `rush` executor client (`musings-rush-executor`): long-polls `/rush/next`, runs commands through hostlib, streams chunks back, closes with the result envelope.
+* hostlib as the execution backend for the poller and the `rush` executors, replacing the poller's bare shell invocation; the shell-wrap decision (wrap in `sh -c` vs split argv) is made per endpoint in musings, not in hostlib, which stays unextended.
 * EOT endpoint narrowed to terminate-only with a validated payload model (replacing the v0.1 manifest-writing terminate); its only effects are the bare EOT marker and process exit.
 * Communication contracts documented in `docs/comms.adoc`.
 * ChRONOS Python style throughout; ruff-clean; 31 tests.
@@ -43,4 +43,4 @@
 * Binary file upload (base64 content field) alongside text saves.
 * Client proxy support (currently `trust_env=False` by design).
 * Command allowlist option for the poller.
-* WebSocket executor attach as an alternative to long-poll for `rcli`, where the transport allows it.
+* WebSocket executor attach as an alternative to long-poll for `rush`, where the transport allows it.

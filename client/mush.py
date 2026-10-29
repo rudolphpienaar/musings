@@ -4,13 +4,13 @@ Each line typed at the prompt becomes one job: it is submitted with
 ``POST /jobs`` and, by default, mush waits for the poller to run it,
 polling ``GET /jobs/{jobId}`` until the job succeeds or fails, then
 prints the captured output. This is the asynchronous counterpart of
-``musings-repl``: where the REPL speaks the synchronous ``/rcli``
+``rush``: where rush speaks the synchronous ``/rush``
 rendezvous, mush speaks the job queue, so it works with any running
-``musings-poller`` and needs no attached ``rcli`` executor.
+``musings-poller`` and needs no attached ``rush`` executor.
 
-The working directory is held client-side, like the REPL: ``cd``
+The working directory is held client-side, like rush: ``cd``
 lines update it, and every other line is submitted with a ``cd``
-prefix for that directory. Unlike ``/rcli``, the jobs API carries
+prefix for that directory. Unlike ``/rush``, the jobs API carries
 no working-directory field and the server does not clamp it, so
 the directory is relative to the poller's working directory, not
 to the service base directory.
@@ -35,7 +35,7 @@ import time
 
 import httpx
 
-from client.repl import cwd_resolve
+from client.rush import cwd_resolve
 
 
 def client_build() -> httpx.Client:

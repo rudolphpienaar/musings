@@ -37,7 +37,7 @@ uv venv
 uv pip install -e .
 ----
 
-Either install creates the same console scripts: `musings`, `musings-server`, `musings-poller`, `mush`, `musings-repl`, and `musings-rcli-executor`.
+Either install creates the same console scripts: `musings`, `musings-server`, `musings-poller`, `mush`, `rush`, and `musings-rush-executor`.
 
 === 1.4. Configure a token
 
@@ -88,21 +88,21 @@ musings eot --reason "all data delivered"
 
 For the shell feel over the job queue, with a poller running, run `mush`. Each line becomes a job and mush waits for its result. `mush --no-wait` submits without waiting.
 
-For the same shell feel over the `rcli` extension instead, attach an executor confined to a base directory in one terminal:
+For the same shell feel over the `rush` extension instead, attach an executor confined to a base directory in one terminal:
 
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1
 export MUSINGS_TOKEN=<same token>
-export MUSINGS_RCLI_BASE_DIR=./data
-musings-rcli-executor
+export MUSINGS_RUSH_BASE_DIR=./data
+musings-rush-executor
 ----
 
-In another, run the REPL:
+In another, run rush:
 
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1
 export MUSINGS_TOKEN=<same token>
-musings-repl
+rush
 ----
 
 == 6. Docker

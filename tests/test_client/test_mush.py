@@ -1,4 +1,4 @@
-"""Tests for the mush REPL client over the job queue."""
+"""Tests for mush over the job queue."""
 
 from __future__ import annotations
 
