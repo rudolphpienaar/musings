@@ -1,10 +1,23 @@
 """Job poller: claim jobs from musings, execute them, post results.
 
-The poller is the agent side of the bidirectional loop. It polls
-``GET /jobs/pending`` (204 means the queue is empty), runs the claimed
-command through hostlib as an explicit ``sh -c`` invocation, and posts
-the structured result back to ``POST /jobs/{jobId}/result``. Claiming
-is atomic on the server, so two pollers never execute the same job.
+The poller is the agent side of the bidirectional loop. It long-polls
+``GET /jobs/pending`` with a ``wait`` of ``POLL_WAIT_SECONDS`` (default
+20): the server parks the request until a job is queued, so a fresh
+submission is claimed within a network round-trip rather than a poll
+interval, and 204 means only that the wait expired empty, answered by
+polling again immediately. It runs the claimed command through hostlib
+as an explicit ``sh -c`` invocation, and posts the structured result
+back to ``POST /jobs/{jobId}/result``. Claiming is atomic on the
+server, so two pollers never execute the same job.
+
+``POLL_INTERVAL_SECONDS`` (default 10) survives as the error backoff:
+the delay before retrying after a failed poll, and the guard spacing
+against a server that answers a long-poll instantly (an old musings
+that ignores ``wait``), so the loop can never hammer.
+
+Starting a poller is the act of granting shell access: commands claimed
+here run as this user, on this machine, in this directory. The server
+alone never executes anything.
 
 Run with::
 
@@ -13,7 +26,8 @@ Run with::
     musings-poller
 
 Pass ``--once`` to claim and execute at most one job, then exit; this
-is useful for testing and for cron-driven polling.
+is useful for testing and for cron-driven polling. ``--once`` checks
+the queue immediately (no long-poll wait) so cron runs return fast.
 """
 
 from __future__ import annotations
@@ -109,18 +123,22 @@ def job_execute(command: str, timeoutSeconds: int, maxChars: int) -> dict:
     }
 
 
-def poll_once(client: httpx.Client, timeoutSeconds: int, maxChars: int) -> bool:
+def poll_once(
+    client: httpx.Client, timeoutSeconds: int, maxChars: int, waitSeconds: float = 0.0
+) -> bool:
     """Claim and execute at most one job.
 
     Args:
         client: Authenticated client.
         timeoutSeconds: Execution timeout for the claimed job.
         maxChars: Output character cap.
+        waitSeconds: Long-poll wait passed to the server; 0 checks the
+            queue and returns immediately.
 
     Returns:
         True when a job was executed, False when the queue was empty.
     """
-    response = client.get("/jobs/pending")
+    response = client.get("/jobs/pending", params={"wait": waitSeconds})
     if response.status_code == 204:
         return False
     response.raise_for_status()
@@ -152,24 +170,38 @@ def poller_run(argv: list[str] | None = None) -> None:
     timeoutSeconds = int(os.environ.get("JOB_TIMEOUT_SECONDS", "300"))
     maxChars = int(os.environ.get("MAX_OUTPUT_CHARS", "100000"))
     pollInterval = float(os.environ.get("POLL_INTERVAL_SECONDS", "10"))
+    waitSeconds = 0.0 if args.once else float(os.environ.get("POLL_WAIT_SECONDS", "20"))
 
     # trust_env=False: see client.cli for why proxy env is bypassed.
+    # The read timeout must outlive the server-side long-poll wait.
     client = httpx.Client(
         base_url=baseUrl,
         headers={"Authorization": f"Bearer {token}"},
-        timeout=30.0,
+        timeout=httpx.Timeout(30.0, read=waitSeconds + 30.0),
         trust_env=False,
+    )
+    print(
+        f"Polling {baseUrl} for jobs; commands will execute as this user, here.",
+        flush=True,
     )
     try:
         while True:
+            started = time.monotonic()
             try:
-                didWork = poll_once(client, timeoutSeconds, maxChars)
+                didWork = poll_once(client, timeoutSeconds, maxChars, waitSeconds)
             except httpx.HTTPError as error:
                 print(f"Poll error: {error}", file=sys.stderr)
                 didWork = False
+                if not args.once:
+                    time.sleep(pollInterval)
             if args.once:
                 break
-            time.sleep(0 if didWork else pollInterval)
+            # Guard against a server that ignores ``wait`` and answers
+            # instantly: an empty poll that returned too fast is spaced
+            # by the poll interval instead of hammering the server.
+            elapsed = time.monotonic() - started
+            if not didWork and elapsed < 1.0:
+                time.sleep(pollInterval)
     except KeyboardInterrupt:
         print("Poller stopped.", flush=True)
 

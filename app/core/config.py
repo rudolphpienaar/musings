@@ -37,7 +37,10 @@ class MusingsSettings(BaseSettings):
         jobTimeoutSeconds: Default execution timeout for poller-run jobs.
         maxOutputChars: Maximum captured stdout/stderr characters kept per
             job result; longer output is truncated.
-        pollIntervalSeconds: Delay between poller claim attempts.
+        pollIntervalSeconds: Poller error backoff, and the guard spacing
+            against a server that ignores the long-poll wait.
+        pollWaitSeconds: How long the poller's claim long-poll parks on
+            the server before returning empty and polling again.
     """
 
     model_config = SettingsConfigDict(
@@ -54,6 +57,7 @@ class MusingsSettings(BaseSettings):
     jobTimeoutSeconds: int = Field(default=300, validation_alias="JOB_TIMEOUT_SECONDS")
     maxOutputChars: int = Field(default=100000, validation_alias="MAX_OUTPUT_CHARS")
     pollIntervalSeconds: int = Field(default=10, validation_alias="POLL_INTERVAL_SECONDS")
+    pollWaitSeconds: int = Field(default=20, validation_alias="POLL_WAIT_SECONDS")
 
     @model_validator(mode="after")
     def bind_derive(self) -> MusingsSettings:

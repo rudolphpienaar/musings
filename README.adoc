@@ -20,8 +20,8 @@ But what if a stage needs one? A segmentation result needs a human approval befo
 
 musings is a FastAPI service with six capabilities:
 
-* *Jobs.* An external entity submits a shell command (`POST /api/v1/jobs`). An agent-side poller claims the oldest queued job (`GET /api/v1/jobs/pending`), executes it, and posts a structured result -- exit code, stdout, stderr, timestamps, truncation flag (`POST /api/v1/jobs/{jobId}/result`).
-* *Mush.* The input interactive shell, over the job queue (`mush`): each line typed at the prompt becomes a job submission, and `mush` polls for its result, then prints stdout, stderr, and a non-zero exit marker when the command failed. It holds a working directory and intercepts `cd`, but the jobs API carries no directory field, so the directory is prefixed onto each command and is relative to the poller's working directory.
+* *Jobs.* An external entity submits a shell command (`POST /api/v1/jobs`). An agent-side poller claims the oldest queued job through a long-poll (`GET /api/v1/jobs/pending?wait=20`), so a fresh submission is claimed within a network round-trip rather than a poll interval, executes it, and posts a structured result -- exit code, stdout, stderr, timestamps, truncation flag (`POST /api/v1/jobs/{jobId}/result`). The server itself never executes anything: starting a poller is the deliberate act that grants execution, on the poller's machine, as the poller's user.
+* *Mush.* The input interactive shell, over the job queue (`mush`): each line typed at the prompt becomes a job submission, and `mush` long-polls for its result, printing stdout, stderr, and a non-zero exit marker the moment the poller posts them. Its prompt shows the poller's real filesystem: at startup it learns the poller's working directory by running `pwd` through the queue, every `cd` is validated against the poller by running `cd <arg> && pwd` there, and the jobs API carries no directory field, so the resulting absolute path is prefixed onto each command.
 * *Messages.* A plain information inbox (`POST /api/v1/messages`, `GET /api/v1/messages`) for unstructured notes alongside jobs. A message is a note to be read back through the API, not a file: it lives in memory, in submission order, and dies with the server restart.
 * *Files.* An agent-to-user file path (`POST /api/v1/save`) that writes posted content to a directory and file under a configured base directory, with path traversal rejected. A save is a durable file on disk, not a note: a downstream workflow reads it from the filesystem, and EOT signals that no more files will arrive.
 * *Termination.* An EOT signal (`POST /api/v1/eot`) that writes an EOT marker file into the base directory and then exits the process. The endpoint does only this, and its payload model -- `confirm` must be exactly `EOT` -- keeps a generic POST from shutting the server down. The service is mortal by design: it is born to serve one run, and it dies when that run is complete.
@@ -31,11 +31,11 @@ All protected routes require a bearer token (`MUSINGS_TOKEN`). A command-line cl
 
 === Whoa -- security
 
-Stated plainly, file injection and command execution is exactly the description that should alarm a security reviewer, and this section does not soften it. The controls are the answer to that alarm. The threat model is explicit: whoever holds the bearer <redacted> can execute shell commands as the user running the poller or any attached `rush` executor, and can write files under the base directory. Treat the token as a shell credential: generate it randomly, distribute it out of band (never in chat, never committed), rotate it on suspicion, and do not expose an unauthenticated instance to the public internet. Bearer <redacted> are only as safe as their transport, so put HTTPS in front of any publicly reachable deployment. The `/save` endpoint additionally confines writes to the base directory and rejects absolute paths and `..` components. The client tools deliberately bypass proxy environment variables (`trust_env=False`) because proxy parsing breaks in some sandboxed environments; proxy support is a roadmap item.
+Stated plainly, file injection and command execution is exactly the description that should alarm a security reviewer, and this section does not soften it. The controls are the answer to that alarm. The threat model is explicit: whoever holds the bearer token can execute shell commands as the user running the poller or any attached `rush` executor, and can write files under the base directory. Execution is opt-in by process: the server alone only relays and never runs a command, so the token becomes a shell only where someone deliberately starts `musings-poller` or an executor, and `musings-server --with-poller` is the explicit single-machine shorthand that makes the server host that target. Treat the token as a shell credential: generate it randomly, distribute it out of band (never in chat, never committed), rotate it on suspicion, and do not expose an unauthenticated instance to the public internet. Bearer tokens are only as safe as their transport, so put HTTPS in front of any publicly reachable deployment. The `/save` endpoint additionally confines writes to the base directory and rejects absolute paths and `..` components. The client tools deliberately bypass proxy environment variables (`trust_env=False`) because proxy parsing breaks in some sandboxed environments; proxy support is a roadmap item.
 
 === How
 
-The interaction is a poll loop, chosen because the agent side can only make outbound connections. The service never calls the agent; the agent polls the service:
+The interaction is a poll loop, chosen because the agent side can only make outbound connections. The service never calls the agent; the agent polls the service. The polls are long-polls: the server parks a claim request until a job is queued, and parks a result request until the result is posted, so waiting costs network round-trips, not poll intervals, and a prompt backed by a running poller answers in round-trips plus execution time:
 
 ----
 submit job  ->  [queued]  ->  poller claims  ->  execute  ->  result posted
@@ -163,7 +163,7 @@ EOF
 chmod 600 .env
 ----
 
-`MUSINGS_TOKEN` is required by the server, which refuses to start without it. `MUSINGS_URL` and `MUSINGS_TOKEN` are both required by the clients (`mush`, `rush`, the poller, the rush executor, and the CLI), which exit when either is unset. The server binds `MUSINGS_HOST` and `MUSINGS_PORT` when they are set, and otherwise derives its bind host and port from `MUSINGS_URL`, so one URL sets both the clients and the server. The server writes `/save` files under `MUSINGS_BASE_DIR` (default `./data`). The full set of variables with their defaults is in `.env.example`.
+`MUSINGS_TOKEN` is required by the server, which refuses to start without it. `MUSINGS_URL` and `MUSINGS_TOKEN` are both required by the clients (`mush`, `rush`, the poller, the rush executor, and the CLI), which exit when either is unset. The server binds `MUSINGS_HOST` and `MUSINGS_PORT` when they are set, and otherwise derives its bind host and port from `MUSINGS_URL`, so one URL sets both the clients and the server. The server writes `/save` files under `MUSINGS_BASE_DIR` (default `./data`). `POLL_WAIT_SECONDS` (default 20, capped at 30 by the server) is how long the poller's claim long-poll parks before returning empty and polling again, and `POLL_INTERVAL_SECONDS` is its error backoff. The full set of variables with their defaults is in `.env.example`.
 
 A `.env` file is read only from the directory the process runs in, so a client started elsewhere needs its own `.env` there or the variables exported explicitly. `.env` is gitignored and excluded from the Docker build by `.dockerignore`, and must never be committed: whoever holds the token holds the shell.
 
@@ -178,8 +178,9 @@ All routes live under `/api/v1` except the public root. Every route except `GET 
 | `GET /api/v1/health` | Health check (public).
 | `POST /api/v1/jobs` | Submit a command. Body: `command`, `description`, `timeoutSeconds`.
 | `GET /api/v1/jobs` | List all jobs.
-| `GET /api/v1/jobs/pending` | Atomically claim the oldest queued job. 204 when the queue is empty.
-| `GET /api/v1/jobs/{jobId}` | Fetch one job with its result.
+| `GET /api/v1/jobs/pending` | Atomically claim the oldest queued job. With `wait` (seconds, capped at 30) the request parks until a job arrives; 204 when the wait expires with the queue still empty. Every call stamps poller presence.
+| `GET /api/v1/jobs/poller` | Report whether a poller has claim-polled within the presence window, and how long ago. Advisory: submissions queue either way.
+| `GET /api/v1/jobs/{jobId}` | Fetch one job with its result. With `wait` (seconds, capped at 30) the request parks until the result lands or the wait expires, then returns the job as it stands.
 | `POST /api/v1/jobs/{jobId}/result` | Post an execution result. 409 unless the job is claimed.
 | `POST /api/v1/messages` | Post a message to the inbox.
 | `GET /api/v1/messages` | List messages in submission order.
@@ -214,20 +215,30 @@ musings-poller            # loop forever
 musings-poller --once     # one job, then exit (cron-friendly)
 ----
 
+Starting the poller is the explicit grant of execution, and that explicitness is the design, not an inconvenience: the server is only the rendezvous, so a running server exposes nothing but a queue, and commands gain a place to run exactly when, and exactly where, someone starts a poller. The poller claims through a long-poll (`POLL_WAIT_SECONDS`, default 20), so a submission is claimed the moment it lands rather than on the next scheduled visit, and it executes each claimed command as the user it runs as, in the directory it runs in.
+
+For single-machine use, where the rendezvous and the execution host are deliberately the same box, the server can embed a poller:
+
+----
+musings-server --with-poller
+----
+
+This is a convenience with a stated cost: the server host becomes the execution target, and whoever holds the token can run commands there. Without the flag, the server only relays.
+
 === The input interactive shell (mush)
 
-For a human at a prompt who wants the job queue, not the `rush` rendezvous, `mush` is the input interactive shell, a shell over `POST /api/v1/jobs`. Each line typed at the prompt becomes one job; `mush` polls `GET /api/v1/jobs/{jobId}` until the job succeeds or fails, then prints its stdout, its stderr, and a non-zero exit marker when the command failed. It needs a running poller, not an attached `rush` executor, and it shows results only when they arrive, rather than streaming them as they are produced. If a job stays queued for more than 10s, `mush` warns that no poller may be running.
+For a human at a prompt who wants the job queue, not the `rush` rendezvous, `mush` is the input interactive shell, a shell over `POST /api/v1/jobs`. Each line typed at the prompt becomes one job; `mush` long-polls `GET /api/v1/jobs/{jobId}?wait=10` until the job succeeds or fails, then prints its stdout, its stderr, and a non-zero exit marker when the command failed. The server parks each wait and answers the moment the result is posted, and the poller claims through its own long-poll, so with a poller attached the prompt answers in round-trips plus execution time, not poll intervals. It needs a running poller, not an attached `rush` executor, and it shows results only when they arrive, rather than streaming them as they are produced. At startup `mush` asks `GET /api/v1/jobs/poller` whether a poller is attached and warns immediately when none is, because a submission without a poller queues forever; a job still queued after 10s draws the same warning.
 
-`mush` holds a working directory like rush and intercepts `cd` itself. The jobs API carries no directory field, so the directory is prefixed onto each submitted command, and it is relative to the poller's working directory -- not clamped to the service base directory the way `rush` directories are. Interrupting a wait abandons the wait but prints the job identifier, so the result can still be fetched later with `musings get`. With `--no-wait`, `mush` submits each line and prints its queued job identifier without waiting:
+The prompt is honest about where it is. Where `rush` shows a pseudo-root confined to its base directory, `mush` has no confinement to display, so it shows the poller's real filesystem instead: at startup it learns the poller's working directory by running `pwd` through the queue, and every `cd` is validated by running `cd <arg> && pwd` there, so the prompt moves only where the poller can actually go and always displays the real absolute path. A failed `cd` prints the shell's error and leaves the prompt where it was, and a bare `cd` goes to the poller's home, as in a shell. When the directory cannot be known (no poller attached yet, or `--no-wait`, where results never come back) the prompt shows `?` rather than pretending. The jobs API carries no directory field, so the absolute path is prefixed onto each submitted command as a `cd`. Interrupting a wait abandons the wait but prints the job identifier, so the result can still be fetched later with `musings get`. With `--no-wait`, `mush` submits each line and prints its queued job identifier without waiting:
 
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1
 export MUSINGS_TOKEN=<token>
 mush
-mush:/$ ls
-mush:/$ cd reports
-mush:/reports$ cat disk.txt
-mush:/reports$ quit
+mush:/home/alice/run$ ls
+mush:/home/alice/run$ cd reports
+mush:/home/alice/run/reports$ cat disk.txt
+mush:/home/alice/run/reports$ quit
 ----
 
 === The reverse interactive shell (rush, an extension)

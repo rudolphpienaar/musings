@@ -4,7 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from client.mush import command_wrap, job_submit, job_wait, result_print
+from client.mush import (
+    cd_remote,
+    command_wrap,
+    cwd_discover,
+    cwd_join,
+    job_submit,
+    job_wait,
+    poller_check,
+    result_print,
+)
 
 
 class ResponseStub:
@@ -28,14 +37,16 @@ class ClientStub:
         self.posts = posts
         self.gets = gets
         self.posted: list[dict] = []
+        self.getParams: list[dict | None] = []
 
     def post(self, path: str, json: dict) -> ResponseStub:
         """Record a post and return the next canned response."""
         self.posted.append(json)
         return ResponseStub(self.posts.pop(0))
 
-    def get(self, path: str) -> ResponseStub:
-        """Return the next canned response."""
+    def get(self, path: str, params: dict | None = None) -> ResponseStub:
+        """Record the params and return the next canned response."""
+        self.getParams.append(params)
         return ResponseStub(self.gets.pop(0))
 
 
@@ -74,6 +85,7 @@ def test_job_wait_polls_until_finished() -> None:
     job = job_wait(client, "abc", 0)
     assert job["state"] == "succeeded"
     assert job["result"]["stdout"] == "ok\n"
+    assert all(params == {"wait": 10.0} for params in client.getParams)
 
 
 def test_job_wait_warns_when_still_queued(
@@ -102,6 +114,84 @@ def test_job_wait_warns_when_still_queued(
     job = job_wait(client, "abc", 0)
     assert job["state"] == "succeeded"
     assert "is a poller running?" in capsys.readouterr().err
+
+
+def test_poller_check_warns_when_detached(capsys) -> None:
+    """A detached poller status prints a warning and reports False."""
+    client = ClientStub(posts=[], gets=[{"attached": False, "lastSeenSecondsAgo": None}])
+    assert poller_check(client) is False
+    assert "No poller is attached" in capsys.readouterr().err
+
+
+def test_poller_check_silent_when_attached(capsys) -> None:
+    """An attached poller status prints nothing and reports True."""
+    client = ClientStub(posts=[], gets=[{"attached": True, "lastSeenSecondsAgo": 1.0}])
+    assert poller_check(client) is True
+    assert capsys.readouterr().err == ""
+
+
+def test_cwd_discover_returns_real_path() -> None:
+    """Discovery submits pwd and returns the printed directory."""
+    client = ClientStub(
+        posts=[{"jobId": "abc", "state": "queued"}],
+        gets=[
+            {
+                "jobId": "abc",
+                "state": "succeeded",
+                "result": {"exitCode": 0, "stdout": "/real/dir\n", "stderr": ""},
+            }
+        ],
+    )
+    assert cwd_discover(client, 0) == "/real/dir"
+    assert client.posted == [{"command": "pwd", "description": ""}]
+
+
+def test_cd_remote_moves_to_probed_path() -> None:
+    """A successful cd probe returns the path pwd printed."""
+    client = ClientStub(
+        posts=[{"jobId": "abc", "state": "queued"}],
+        gets=[
+            {
+                "jobId": "abc",
+                "state": "succeeded",
+                "result": {"exitCode": 0, "stdout": "/home\n", "stderr": ""},
+            }
+        ],
+    )
+    assert cd_remote(client, "/start", "/home", 0) == "/home"
+    assert client.posted == [
+        {"command": "cd /start && cd /home && pwd", "description": ""}
+    ]
+
+
+def test_cd_remote_keeps_cwd_on_failure(capsys) -> None:
+    """A failed cd probe prints the error and keeps the old directory."""
+    client = ClientStub(
+        posts=[{"jobId": "abc", "state": "queued"}],
+        gets=[
+            {
+                "jobId": "abc",
+                "state": "failed",
+                "result": {
+                    "exitCode": 1,
+                    "stdout": "",
+                    "stderr": "sh: cd: nope: No such file or directory\n",
+                },
+            }
+        ],
+    )
+    assert cd_remote(client, "/start", "nope", 0) == "/start"
+    assert "No such file or directory" in capsys.readouterr().err
+
+
+def test_cwd_join_tracks_without_validation(capsys) -> None:
+    """No-wait resolution joins paths and refuses blind relative moves."""
+    assert cwd_join("/a/b", "..") == "/a"
+    assert cwd_join("/a", "c/d") == "/a/c/d"
+    assert cwd_join("", "/abs") == "/abs"
+    assert cwd_join("/a", None) == ""
+    assert cwd_join("", "relative") == ""
+    assert "unknown" in capsys.readouterr().err
 
 
 def test_result_print_reports_exit_code(capsys) -> None:

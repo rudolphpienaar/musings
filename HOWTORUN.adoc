@@ -61,9 +61,15 @@ Then visit:
 * API root: http://127.0.0.1:8000
 * Interactive API docs: http://127.0.0.1:8000/docs
 
+The server alone only relays: it queues jobs, stores messages, and writes `/save` files, but it never executes a command. For single-machine use it can embed a poller, which makes this host the execution target for anyone holding the token:
+
+----
+musings-server --with-poller
+----
+
 == 3. Run the poller
 
-In another terminal, with the same token and the service URL:
+The poller is the execution side of the job queue, and starting it is the explicit grant of shell access: claimed commands run as the user it runs as, in the directory it runs in. In another terminal, with the same token and the service URL:
 
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1
@@ -71,7 +77,7 @@ export MUSINGS_TOKEN=<same token>
 musings-poller
 ----
 
-Use `musings-poller --once` to execute at most one job and exit.
+The poller claims work through a long-poll, so a freshly submitted job is claimed within a round-trip rather than a poll interval. Use `musings-poller --once` to check the queue immediately, execute at most one job, and exit.
 
 == 4. Submit work
 
@@ -86,7 +92,7 @@ musings eot --reason "all data delivered"
 
 == 5. Run the interactive shell
 
-For the shell feel over the job queue, with a poller running, run `mush`. Each line becomes a job and mush waits for its result. `mush --no-wait` submits without waiting.
+For the shell feel over the job queue, with a poller running, run `mush`. Each line becomes a job and mush long-polls for its result, so output appears the moment the poller posts it. At startup mush warns immediately when no poller is attached, since without one every command queues forever. `mush --no-wait` submits without waiting.
 
 For the same shell feel over the `rush` extension instead, attach an executor confined to a base directory in one terminal:
 

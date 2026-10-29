@@ -57,6 +57,25 @@ class JobResult(BaseModel):
     finishedAt: datetime
 
 
+class PollerStatus(BaseModel):
+    """Whether a job poller is attached to this service.
+
+    A poller counts as attached when it has hit ``GET /jobs/pending``
+    within the server's presence window. The jobs API works without
+    one (submissions queue regardless), so this is advisory: clients
+    like mush read it to warn a human that nothing will execute their
+    commands until a poller starts.
+
+    Attributes:
+        attached: True when a poller polled within the window.
+        lastSeenSecondsAgo: Seconds since the last claim poll, or
+            None when no poller has ever polled this run.
+    """
+
+    attached: bool
+    lastSeenSecondsAgo: float | None = None
+
+
 class Job(BaseModel):
     """A job with its current state and, once finished, its result.
 

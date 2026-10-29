@@ -9,7 +9,7 @@ musings is a small FastAPI service for bidirectional communication with an AI ag
 * *Service layer* (`app/services/`): the stateful core. `job_store` holds the in-memory job queue with an asyncio lock; `message_store` holds the inbox; `file_store` confines writes to the base directory; `termination` validates the EOT payload model and schedules process shutdown; the `rush` rendezvous pairs a submitter's blocked POST with an attached executor and streams the executor's output back as JSON lines; the execution backend runs commands through hostlib (see `comms.adoc`).
 * *Models* (`app/models/`): Pydantic payloads for jobs, results, messages, file saves, system responses, EOT requests, and `rush` submissions and stream chunks. API payloads are Pydantic models; internal records are dataclasses.
 * *Core* (`app/core/`): environment settings (`config`, via pydantic-settings) and bearer-token authentication (`security`).
-* *Clients* (`client/`): the `musings` CLI (submit, inspect, save, message, terminate), the `musings-poller` (claim, execute, post results), the job-queue shell (`mush`, a shell-like prompt whose lines become `/jobs` posts and which polls for their results; it holds the working directory client-side and prefixes it onto commands), the rush client (`rush`, a shell-like prompt whose lines become `/rush` posts; it holds the shell working directory and the server clamps it to the base directory), and the `rush` executor (`musings-rush-executor`, which long-polls `/rush/next`, executes under hostlib, and streams chunks back). All read `MUSINGS_URL` and `MUSINGS_TOKEN` from the environment and bypass proxy environment variables.
+* *Clients* (`client/`): the `musings` CLI (submit, inspect, save, message, terminate), the `musings-poller` (claim, execute, post results), the job-queue shell (`mush`, a shell-like prompt whose lines become `/jobs` posts and which long-polls for their results; it tracks the poller's real working directory by probing with `pwd`, and prefixes the absolute path onto commands), the rush client (`rush`, a shell-like prompt whose lines become `/rush` posts; it holds the shell working directory and the server clamps it to the base directory), and the `rush` executor (`musings-rush-executor`, which long-polls `/rush/next`, executes under hostlib, and streams chunks back). All read `MUSINGS_URL` and `MUSINGS_TOKEN` from the environment and bypass proxy environment variables.
 
 == Data flows
 
@@ -17,7 +17,7 @@ musings is a small FastAPI service for bidirectional communication with an AI ag
 
 ----
 client: POST /jobs {command}            -> job queued
-poller: GET  /jobs/pending              -> oldest queued job, atomically claimed
+poller: GET  /jobs/pending?wait=20      -> oldest queued job, atomically claimed (long-poll)
 poller: hostlib sh -c <command>         -> exit code, stdout, stderr (capped)
 poller: POST /jobs/{id}/result {result} -> job succeeded | failed
 client: GET  /jobs/{id}                 -> job with result
@@ -27,13 +27,13 @@ client: GET  /jobs/{id}                 -> job with result
 
 ----
 mush:   POST /jobs {command}            -> job queued
-poller: GET  /jobs/pending              -> oldest queued job, atomically claimed
+poller: GET  /jobs/pending?wait=20      -> oldest queued job, atomically claimed (long-poll)
 poller: hostlib sh -c <command>         -> exit code, stdout, stderr (capped)
 poller: POST /jobs/{id}/result {result} -> job succeeded | failed
-mush:   GET  /jobs/{id} (poll)           -> job with result, printed
+mush:   GET  /jobs/{id}?wait=10          -> job with result, printed (long-poll)
 ----
 
-Mush is the interactive end of the job queue, where the poller is the shared executor: any job submitter, not only mush, feeds the same poller, and mush waits for the result rather than streaming it. Its working directory is held client-side and prefixed onto commands; unlike `/rush`, the jobs API carries no directory field and the server does not clamp it, so the directory is relative to the poller's working directory. See `comms.adoc` for the full contract.
+Mush is the interactive end of the job queue, where the poller is the shared executor: any job submitter, not only mush, feeds the same poller, and mush waits for the result rather than streaming it. Its working directory is the poller's real one, learned by running `pwd` through the queue and moved by validated `cd <arg> && pwd` probes; the jobs API carries no directory field and the server does not clamp it, so the absolute path is prefixed onto each command. See `comms.adoc` for the full contract.
 
 === File delivery
 
@@ -89,7 +89,7 @@ One shared bearer token, read from `MUSINGS_TOKEN`, compared in constant time, r
 * In-memory queue: matches the mortal lifecycle; persistence can be added without changing the API.
 * EOT as a file, not a message: downstream consumers in a dataflow graph observe files, so completion must itself be a file.
 * EOT does only terminate: the endpoint validates a payload model and then writes the marker and exits. No job accounting, no manifest.
-* Shell state in the client: the rush client holds the working directory and intercepts `cd`; the server only clamps it to the base directory. The server stays stateless and mortal. Mush holds its directory the same way, but prefixes it onto commands because the jobs API carries no directory field.
+* Shell state in the client: the rush client holds the working directory and intercepts `cd`; the server only clamps it to the base directory. The server stays stateless and mortal. Mush holds its directory client-side too, but as the poller's real absolute path, validated by `cd && pwd` probes through the queue and prefixed onto commands because the jobs API carries no directory field.
 * Mush shares the poller: the job queue's executor is shared across submitters, while `rush` pairs one submitter with one dedicated executor. Mush therefore waits for a result instead of streaming it, and needs a running poller rather than an attached `rush` executor.
 * Streaming, not polling, for interactive commands: the `rush` response is chunked JSON lines closed by an execution envelope, so output arrives as it is produced and proxy idle timers stay reset. The job queue remains the tool for batch work.
 * hostlib left as it is: it is deliberately not a shell, and the decision to wrap a command for the shell belongs to musings per endpoint, not to the library.
