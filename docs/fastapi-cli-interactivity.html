@@ -180,8 +180,8 @@
 
 <header>
   <div class="topline"><span class="dot"></span><span>Code prior art · searched 29 Oct 2026 · FNNDSC org, PyPI, GitHub &amp; DeepWiki indexes</span></div>
-  <h1>FastAPI services that give you a CLI over HTTP</h1>
-  <p class="lede">You asked for something in code, close to <strong>mush</strong> (the input interactive shell) and <strong>rcli</strong> (the reverse interactive shell): a FastAPI service that takes shell commands as jobs, delivers files into a run, offers a live prompt, and rendezvous through a mailbox a separate executor polls. Here is what actually exists — project by project, endpoint by endpoint.</p>
+  <h1>FastAPI services that provide a CLI over HTTP</h1>
+  <p class="lede">Code-level prior art close to <strong>mush</strong> (the input interactive shell) and <strong>rush</strong> (the reverse interactive shell): a FastAPI service that takes shell commands as jobs, delivers files into a run, offers a live prompt, and rendezvous through a mailbox a separate executor polls. What actually exists, project by project, endpoint by endpoint.</p>
 
   <div class="verdict">
     <div>
@@ -197,7 +197,7 @@
 
 <section id="target">
   <div class="sec-head"><span class="n">01</span><h2>The target, in four parts</h2></div>
-  <p class="sec-sub">The four features your design needs at once. Select one to highlight every project in the matrix below that has it — in full or in part.</p>
+  <p class="sec-sub">The four features the design needs at once. Select one to highlight every project in the matrix below that has it — in full or in part.</p>
   <div class="targets" role="group" aria-label="Filter matrix by feature">
     <button class="target" data-feat="0" aria-pressed="false">
       <span class="letter">(a)</span>
@@ -214,7 +214,7 @@
     <button class="target" data-feat="2" aria-pressed="false">
       <span class="letter">(c)</span>
       <h3>Interactive shell prompt over HTTP</h3>
-      <p>A persistent prompt you can type into — PTY session, stdin write, output you can poll or stream — served over HTTP / WebSocket.</p>
+      <p>A persistent prompt for typed input — PTY session, stdin write, output that can be polled or streamed — served over HTTP / WebSocket.</p>
       <span class="hits" data-hits="2"></span>
     </button>
     <button class="target" data-feat="3" aria-pressed="false">
@@ -378,7 +378,7 @@ GET  /permissions</div>
       <div class="piece"><span class="from">(b) ← agent-infra/sandbox</span><b>File upload / download</b><span>Multipart <code>POST /v1/file/upload</code> and <code>GET /v1/file/download</code> alongside the shell API.</span></div>
       <div class="piece"><span class="from">(a) ← host-terminal-mcp</span><b><code>POST /execute</code></b><span>The one-shot shell job endpoint, returning stdout, stderr and exit code.</span></div>
     </div>
-    <p class="plus-note">Two FNNDSC precedents complete the picture: <strong>pfcon’s zip-in / zip-out</strong> is the file-delivery precedent from your own ecosystem (submit a job, get results back as an archive — but Flask, not FastAPI), and <strong>pfmdb’s <code>POST /pfmongo/cli/{cmd}</code></strong> is the precedent for exposing a CLI verbatim over HTTP — one product’s CLI, synchronously.</p>
+    <p class="plus-note">Two FNNDSC precedents complete the picture: <strong>pfcon’s zip-in / zip-out</strong> is the file-delivery precedent from the FNNDSC ecosystem (submit a job, get results back as an archive — but Flask, not FastAPI), and <strong>pfmdb’s <code>POST /pfmongo/cli/{cmd}</code></strong> is the precedent for exposing a CLI verbatim over HTTP — one product’s CLI, synchronously.</p>
   </div>
 </section>
 
@@ -434,7 +434,7 @@ GET  /permissions</div>
 </section>
 
 <footer>
-  <span>Concrete code prior art for the musings design — mush (input interactive shell) and rcli (reverse interactive shell).</span>
+  <span>Concrete code prior art for the musings design — mush (input interactive shell) and rush (reverse interactive shell).</span>
   <span>Research snapshot: 29 Oct 2026 · Sources as recorded in the research report; hedges carried, nothing added.</span>
 </footer>
 
