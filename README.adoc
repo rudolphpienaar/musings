@@ -149,22 +149,23 @@ docker compose up
 
 === Configuration
 
-The server and every client read their settings from the environment, and from a `.env` file in the current working directory when one exists. Copy `.env.example` to `.env`, put a long random token in `MUSINGS_TOKEN`, and restrict the file, since whoever holds the token holds the shell:
+The server and every client read their settings from the environment, and from a `.env` file in the current working directory when one exists. A variable already present in the environment is never overwritten by `.env`, and a missing `.env` file is silently ignored.
+
+Generate a `.env` with a random token. The token authenticates every protected route, so it must not be shared or committed:
 
 ----
-cp .env.example .env
+token=$(openssl rand -hex 32)
+cat > .env <<EOF
+MUSINGS_TOKEN=$token
+MUSINGS_URL=http://127.0.0.1:8000/api/v1
+MUSINGS_BASE_DIR=./data
+EOF
 chmod 600 .env
 ----
 
-A minimal `.env` for a local server and clients in the same directory looks like this:
+`MUSINGS_TOKEN` is required by the server, which refuses to start without it. `MUSINGS_URL` and `MUSINGS_TOKEN` are both required by the clients (`mush`, `rush`, the poller, the rush executor, and the CLI), which exit when either is unset. `MUSINGS_URL` is ignored by the server, which binds `MUSINGS_HOST` and `MUSINGS_PORT` instead and writes `/save` files under `MUSINGS_BASE_DIR` (default `./data`). The full set of variables with their defaults is in `.env.example`.
 
-----
-MUSINGS_TOKEN=<a long random token>
-MUSINGS_URL=http://127.0.0.1:8000/api/v1
-MUSINGS_BASE_DIR=./data
-----
-
-Yes, `MUSINGS_URL` belongs in there too: the clients (`mush`, `rush`, the poller, the rush executor, and the CLI) need it to find the service, while the server ignores it and binds `MUSINGS_HOST` and `MUSINGS_PORT` instead, writing `/save` files under `MUSINGS_BASE_DIR` (default `./data`). The server refuses to start without `MUSINGS_TOKEN`; the clients exit unless both `MUSINGS_URL` and `MUSINGS_TOKEN` are set. Real environment variables always win over `.env` values, and `.env` is only read from the directory you run in, so a client started elsewhere needs its own `.env` there or the variables exported explicitly. Never commit `.env`: it is gitignored, and it is also excluded from the Docker build by `.dockerignore`, so a token in the checkout never lands in an image.
+A `.env` file is read only from the directory the process runs in, so a client started elsewhere needs its own `.env` there or the variables exported explicitly. `.env` is gitignored and excluded from the Docker build by `.dockerignore`, and must never be committed: whoever holds the token holds the shell.
 
 === Endpoints
 
