@@ -1,4 +1,4 @@
-# musings: mortal FastAPI service for bidirectional communication with a sandboxed party.
+# musings: mortal FastAPI service for file injection and command execution.
 FROM python:3.12-slim
 
 # Set the working directory in the container

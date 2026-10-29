@@ -3,6 +3,6 @@ message: "If you use musings, please cite it as below."
 authors:
   - family-names: "Pienaar"
     given-names: "Rudolph"
-title: "musings: a small, mortal service for a sandboxed party"
+title: "musings: a mortal FastAPI service for file injection and command execution"
 version: "0.2.1"
 date-released: "2026-10-28"
