@@ -28,6 +28,8 @@ from datetime import datetime, timezone
 import httpx
 from hostlib import JobSpec, job_run
 
+from client.env import env_load
+
 
 @dataclass
 class TruncatedText:
@@ -141,6 +143,7 @@ def poller_run(argv: list[str] | None = None) -> None:
     parser.add_argument("--once", action="store_true", help="Execute at most one job, then exit.")
     args = parser.parse_args(argv)
 
+    env_load()
     baseUrl = os.environ.get("MUSINGS_URL", "")
     token = os.environ.get("MUSINGS_TOKEN", "")
     if not baseUrl or not token:

@@ -147,6 +147,24 @@ docker compose up
 
 == Usage (Discussion)
 
+=== Configuration
+
+The server and every client read their settings from the environment, and from a `.env` file in the current working directory when one exists. Copy `.env.example` to `.env`, put a long random token in `MUSINGS_TOKEN`, and restrict the file, since whoever holds the token holds the shell:
+
+----
+cp .env.example .env
+chmod 600 .env
+----
+
+A minimal `.env` for a local server and clients in the same directory looks like this:
+
+----
+MUSINGS_TOKEN=<a long random token>
+MUSINGS_URL=http://127.0.0.1:8000/api/v1
+----
+
+Yes, `MUSINGS_URL` belongs in there too: the clients (`mush`, `rush`, the poller, the rush executor, and the CLI) need it to find the service, while the server ignores it and binds `MUSINGS_HOST` and `MUSINGS_PORT` instead. The server refuses to start without `MUSINGS_TOKEN`; the clients exit unless both `MUSINGS_URL` and `MUSINGS_TOKEN` are set. Real environment variables always win over `.env` values, and `.env` is only read from the directory you run in, so a client started elsewhere needs its own `.env` there or the variables exported explicitly. Never commit `.env`: it is gitignored, and it is also excluded from the Docker build by `.dockerignore`, so a token in the checkout never lands in an image.
+
 === Endpoints
 
 All routes live under `/api/v1` except the public root. Every route except `GET /` and `GET /api/v1/health` requires `Authorization: Bearer <token>`.

@@ -26,6 +26,7 @@ import httpx
 from hostlib import JobSpec, job_run
 from hostlib.sink import SinkBase
 
+from client.env import env_load
 from client.poller import output_truncate
 
 
@@ -172,6 +173,7 @@ def executor_run(argv: list[str] | None = None) -> None:
     Args:
         argv: Unused; accepted for console-script symmetry.
     """
+    env_load()
     baseUrl = os.environ.get("MUSINGS_URL", "")
     token = os.environ.get("MUSINGS_TOKEN", "")
     if not baseUrl or not token:

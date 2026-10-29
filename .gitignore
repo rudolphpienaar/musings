@@ -29,3 +29,5 @@ data/
 # Operating system files
 .DS_Store
 Thumbs.db
+# Local secrets (never commit)
+.env

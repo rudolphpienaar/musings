@@ -21,6 +21,8 @@ import sys
 
 import httpx
 
+from client.env import env_load
+
 
 def client_build() -> httpx.Client:
     """Build an authenticated HTTP client from the environment.
@@ -31,6 +33,7 @@ def client_build() -> httpx.Client:
     Raises:
         SystemExit: When MUSINGS_URL or MUSINGS_TOKEN is unset.
     """
+    env_load()
     baseUrl = os.environ.get("MUSINGS_URL", "")
     token = os.environ.get("MUSINGS_TOKEN", "")
     if not baseUrl or not token:

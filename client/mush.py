@@ -35,6 +35,7 @@ import time
 
 import httpx
 
+from client.env import env_load
 from client.rush import cwd_resolve
 
 
@@ -47,6 +48,7 @@ def client_build() -> httpx.Client:
     Raises:
         SystemExit: When MUSINGS_URL or MUSINGS_TOKEN is unset.
     """
+    env_load()
     baseUrl = os.environ.get("MUSINGS_URL", "")
     token = os.environ.get("MUSINGS_TOKEN", "")
     if not baseUrl or not token:
