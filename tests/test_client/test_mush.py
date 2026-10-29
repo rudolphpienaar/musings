@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from client.mush import command_wrap, job_submit, job_wait, result_print
 
 
@@ -72,6 +74,34 @@ def test_job_wait_polls_until_finished() -> None:
     job = job_wait(client, "abc", 0)
     assert job["state"] == "succeeded"
     assert job["result"]["stdout"] == "ok\n"
+
+
+def test_job_wait_warns_when_still_queued(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A job queued past 10s warns that no poller may be running."""
+    calls = {"count": 0}
+
+    def fake_monotonic() -> float:
+        """Return 0.0 once, then 11.0 for every later call."""
+        calls["count"] += 1
+        return 0.0 if calls["count"] == 1 else 11.0
+
+    monkeypatch.setattr("client.mush.time.monotonic", fake_monotonic)
+    client = ClientStub(
+        posts=[],
+        gets=[
+            {"jobId": "abc", "state": "queued"},
+            {
+                "jobId": "abc",
+                "state": "succeeded",
+                "result": {"exitCode": 0, "stdout": "ok\n", "stderr": ""},
+            },
+        ],
+    )
+    job = job_wait(client, "abc", 0)
+    assert job["state"] == "succeeded"
+    assert "is a poller running?" in capsys.readouterr().err
 
 
 def test_result_print_reports_exit_code(capsys) -> None:

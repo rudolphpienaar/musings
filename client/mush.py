@@ -105,12 +105,21 @@ def job_wait(client: httpx.Client, jobId: str, pollInterval: float) -> dict:
     Returns:
         The finished job record as decoded JSON.
     """
+    notified = False
+    start = time.monotonic()
     while True:
         response = client.get(f"/jobs/{jobId}")
         response.raise_for_status()
         job = response.json()
         if job["state"] in ("succeeded", "failed"):
             return job
+        if not notified and time.monotonic() - start >= 10.0:
+            print(
+                "Still queued after 10s: is a poller running? "
+                "Start musings-poller in another terminal.",
+                file=sys.stderr,
+            )
+            notified = True
         time.sleep(pollInterval)
 
 
@@ -183,6 +192,7 @@ def mush_run(argv: list[str] | None = None) -> None:
         if args.no_wait:
             print(f"Job {job['jobId']} queued.")
             continue
+        print(f"Job {job['jobId']} submitted, waiting for a poller.", flush=True)
         try:
             job = job_wait(client, job["jobId"], args.poll_interval)
         except KeyboardInterrupt:

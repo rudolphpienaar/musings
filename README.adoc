@@ -216,7 +216,7 @@ musings-poller --once     # one job, then exit (cron-friendly)
 
 === The input interactive shell (mush)
 
-For a human at a prompt who wants the job queue, not the `rush` rendezvous, `mush` is the input interactive shell, a shell over `POST /api/v1/jobs`. Each line typed at the prompt becomes one job; `mush` polls `GET /api/v1/jobs/{jobId}` until the job succeeds or fails, then prints its stdout, its stderr, and a non-zero exit marker when the command failed. It needs a running poller, not an attached `rush` executor, and it shows results only when they arrive, rather than streaming them as they are produced.
+For a human at a prompt who wants the job queue, not the `rush` rendezvous, `mush` is the input interactive shell, a shell over `POST /api/v1/jobs`. Each line typed at the prompt becomes one job; `mush` polls `GET /api/v1/jobs/{jobId}` until the job succeeds or fails, then prints its stdout, its stderr, and a non-zero exit marker when the command failed. It needs a running poller, not an attached `rush` executor, and it shows results only when they arrive, rather than streaming them as they are produced. If a job stays queued for more than 10s, `mush` warns that no poller may be running.
 
 `mush` holds a working directory like rush and intercepts `cd` itself. The jobs API carries no directory field, so the directory is prefixed onto each submitted command, and it is relative to the poller's working directory -- not clamped to the service base directory the way `rush` directories are. Interrupting a wait abandons the wait but prints the job identifier, so the result can still be fetched later with `musings get`. With `--no-wait`, `mush` submits each line and prints its queued job identifier without waiting:
 
