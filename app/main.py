@@ -38,9 +38,11 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import socket
 import sys
 import threading
 import time
+from urllib.parse import urlparse
 
 import httpx
 import uvicorn
@@ -70,17 +72,69 @@ def app_create() -> FastAPI:
 app = app_create()
 
 
+def host_isLoopback(host: str) -> bool:
+    """Report whether a host name resolves only to loopback addresses.
+
+    Args:
+        host: Host name or address as written in a URL.
+
+    Returns:
+        True for the literal loopback names and for any name whose
+        every resolved address is loopback (an ``/etc/hosts`` entry
+        pointing a public name at this machine, for instance); False
+        otherwise, and False when the name does not resolve at all.
+    """
+    if host in LOOPBACK_HOSTS:
+        return True
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    addresses = {info[4][0] for info in infos}
+    return bool(addresses) and all(
+        address.startswith("127.") or address == "::1" for address in addresses
+    )
+
+
+def pollerUrl_derive(musingsUrl: str | None, port: int, scheme: str) -> str:
+    """Pick the address the embedded poller dials.
+
+    The poller shares the server's process, so it should always reach
+    the server over loopback and never through the network in front
+    of it, which fails on routers without NAT loopback. Under a public
+    certificate, though, the hostname matters: a certificate issued
+    for ``musings.example.org`` does not verify against ``127.0.0.1``.
+    So when ``MUSINGS_URL`` names a host that resolves to loopback on
+    this machine (typically via an ``/etc/hosts`` entry), the poller
+    keeps that hostname; otherwise it dials ``127.0.0.1``.
+
+    Args:
+        musingsUrl: The configured ``MUSINGS_URL``, or None.
+        port: Port the server listens on.
+        scheme: ``"http"`` or ``"https"``.
+
+    Returns:
+        The base URL for the embedded poller, ending in ``/api/v1``.
+    """
+    host = "127.0.0.1"
+    if musingsUrl is not None:
+        urlHost = urlparse(musingsUrl).hostname
+        if urlHost and host_isLoopback(urlHost):
+            host = urlHost
+    return f"{scheme}://{host}:{port}/api/v1"
+
+
 def poller_thread_start(port: int, scheme: str) -> threading.Thread:
     """Start an in-process job poller against this server.
 
     The poller runs in a daemon thread, so it dies with the server
     process, and it dials the server over HTTP exactly as an external
     ``musings-poller`` would: same claim endpoint, same presence
-    stamp, same atomic claiming. It always dials loopback on the bound
-    port, never ``MUSINGS_URL``: it shares the server's process, so
-    loopback is always reachable, whereas a URL naming a public
-    address would route through the network in front of the server
-    and fail on routers without NAT loopback. It waits for the server
+    stamp, same atomic claiming. It dials loopback on the bound port
+    (see ``pollerUrl_derive`` for how the hostname is chosen), never a
+    public address: it shares the server's process, so loopback is
+    always reachable, whereas the network in front of the server fails
+    on routers without NAT loopback. It waits for the server
     to answer its health route before entering the poll loop, so
     startup order does not matter.
 
@@ -109,7 +163,7 @@ def poller_thread_start(port: int, scheme: str) -> threading.Thread:
     ):
         if path is not None:
             os.environ.setdefault(name, str(path))
-    os.environ["MUSINGS_URL"] = f"{scheme}://127.0.0.1:{port}/api/v1"
+    os.environ["MUSINGS_URL"] = pollerUrl_derive(settings.musingsUrl, port, scheme)
 
     def poller_delayed_run() -> None:
         """Wait for the server to come up, then run the poll loop."""

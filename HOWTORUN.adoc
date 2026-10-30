@@ -110,6 +110,41 @@ curl --cacert ca.pem --cert <name>.pem --key <name>.key \
 
 Lifetimes are deliberate: the CA lives ten years, the server certificate a year, a client certificate 90 days because its key sits on someone else's machine. Renewal is rerunning the `server` or `client` subcommand after removing the old files, then restarting the server or re-sending the pair.
 
+== 2b. TLS with a public certificate (Let's Encrypt)
+
+A private CA fails the moment the remote party sits behind a TLS-intercepting egress proxy, as sandboxed agents often do: the proxy terminates the client's TLS and verifies the server with public roots, so neither a pinned CA nor a client certificate ever reaches the server. The answer is a certificate from a public authority on a DNS name you control. Nothing in the server changes; only the files differ.
+
+Three things outside the repository come first. Create an A record for the name (say `musings.example.org`) pointing at the public address. Forward public TCP port 80 on the router to port 8080 on the server host, which lets the ACME HTTP challenge be answered without root. Then install certbot as a user tool:
+
+----
+uv tool install certbot
+----
+
+Issue the certificate into a directory you own, so no root is involved anywhere:
+
+----
+certbot certonly --standalone --http-01-port 8080 \
+  --config-dir ~/musings/acme --work-dir ~/musings/acme/work --logs-dir ~/musings/acme/logs \
+  -d musings.example.org -m you@example.org --agree-tos --no-eff-email
+----
+
+Point the server at the result and drop mutual TLS, which a proxy cannot carry. `MUSINGS_URL` carries the DNS name, since a public certificate verifies by hostname, not by address:
+
+----
+MUSINGS_URL=https://musings.example.org:8888/api/v1
+MUSINGS_TLS_CERT=/home/me/musings/acme/live/musings.example.org/fullchain.pem
+MUSINGS_TLS_KEY=/home/me/musings/acme/live/musings.example.org/privkey.pem
+# MUSINGS_TLS_CLIENT_CA, MUSINGS_CA_CERT, MUSINGS_CLIENT_CERT, MUSINGS_CLIENT_KEY: unset
+----
+
+A LAN usually cannot reach its own public address, so on the server host add `127.0.0.1 musings.example.org` to `/etc/hosts`. Local clients and the embedded poller then dial loopback under the right name, and the certificate verifies. The remote party needs only the URL and the token:
+
+----
+curl -H "Authorization: Bearer <token>" https://musings.example.org:8888/api/v1/health
+----
+
+Certificates from Let's Encrypt last 90 days. `certbot renew` with the same three directory flags renews anything within 30 days of expiry; run it from a user cron or systemd timer, keep the port 80 forward in place for it, and restart the server afterwards, since uvicorn reads the files once at startup.
+
 == 3. Run the poller
 
 The poller is the execution side of the job queue, and starting it is the explicit grant of shell access: claimed commands run as the user it runs as, in the directory it runs in. In another terminal, with the same token and the service URL:

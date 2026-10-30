@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.core.config import settings_get
-from app.main import server_run
+from app.main import pollerUrl_derive, server_run
 
 
 @pytest.fixture
@@ -101,3 +101,36 @@ def test_public_https_passes_tls_files_to_uvicorn(
     assert call["port"] == 8443
     assert call["ssl_certfile"] == str(tmp_path / "server.pem")
     assert "ssl_ca_certs" not in call
+
+
+def test_poller_url_defaults_to_loopback_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A public hostname that resolves off-box is replaced by 127.0.0.1."""
+    monkeypatch.setattr(
+        "app.main.socket.getaddrinfo",
+        lambda host, port: [(None, None, None, None, ("73.167.233.252", 0))],
+    )
+    url = pollerUrl_derive("https://musings.example.org:8888/api/v1", 8888, "https")
+    assert url == "https://127.0.0.1:8888/api/v1"
+
+
+def test_poller_url_keeps_hostname_that_resolves_to_loopback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An /etc/hosts override keeps the name, so a public certificate verifies."""
+    monkeypatch.setattr(
+        "app.main.socket.getaddrinfo",
+        lambda host, port: [(None, None, None, None, ("127.0.0.1", 0))],
+    )
+    url = pollerUrl_derive("https://musings.example.org:8888/api/v1", 8888, "https")
+    assert url == "https://musings.example.org:8888/api/v1"
+
+
+def test_poller_url_without_configured_url() -> None:
+    """With no MUSINGS_URL at all the poller dials plain loopback."""
+    assert pollerUrl_derive(None, 8000, "http") == "http://127.0.0.1:8000/api/v1"
+
+
+def test_poller_url_unresolvable_name_falls_back() -> None:
+    """A name that does not resolve is not trusted to be loopback."""
+    url = pollerUrl_derive("https://no-such-host.invalid:8888/api/v1", 8888, "https")
+    assert url == "https://127.0.0.1:8888/api/v1"
