@@ -11,22 +11,8 @@ from app.services.rush_store import (
     RushStore,
     UnclaimedSubmissionError,
     UnknownSubmissionError,
-    cwd_validate,
 )
 import pytest
-
-
-def test_cwd_validate() -> None:
-    """Working directories normalize, and escapes are rejected."""
-    assert cwd_validate("") == ""
-    assert cwd_validate(".") == ""
-    assert cwd_validate("a/b") == "a/b"
-    with pytest.raises(ValueError):
-        cwd_validate("/etc")
-    with pytest.raises(ValueError):
-        cwd_validate("../x")
-    with pytest.raises(ValueError):
-        cwd_validate("a/../b")
 
 
 def test_submission_without_executor_fails_fast() -> None:
@@ -109,3 +95,27 @@ def test_chunk_unknown_raises() -> None:
     store = RushStore()
     with pytest.raises(UnknownSubmissionError):
         store.chunk_post("nope", RushChunk(stream="stdout", data="x"))
+
+
+def test_disconnected_long_poll_does_not_claim() -> None:
+    """A long-poll whose executor dropped leaves the submission for a live one."""
+    store = RushStore(presenceWindowSeconds=60.0, claimTimeoutSeconds=5.0, nextWaitSeconds=1.0)
+    store.executor_touch("dead")
+    record = store.submission_create("pwd", "")
+
+    async def gone() -> bool:
+        return True
+
+    async def alive() -> bool:
+        return False
+
+    async def scenario() -> tuple[object, object]:
+        first = await store.submission_claim("dead", gone)
+        second = await store.submission_claim("live", alive)
+        return first, second
+
+    first, second = asyncio.run(scenario())
+    assert first is None
+    assert second is not None
+    assert second.submissionId == record.submission.submissionId
+    assert record.executorId == "live"

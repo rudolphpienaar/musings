@@ -229,7 +229,7 @@ This is a convenience with a stated cost: the server host becomes the execution 
 
 For a human at a prompt who wants the job queue, not the `rush` rendezvous, `mush` is the input interactive shell, a shell over `POST /api/v1/jobs`. Each line typed at the prompt becomes one job; `mush` long-polls `GET /api/v1/jobs/{jobId}?wait=10` until the job succeeds or fails, then prints its stdout, its stderr, and a non-zero exit marker when the command failed. The server parks each wait and answers the moment the result is posted, and the poller claims through its own long-poll, so with a poller attached the prompt answers in round-trips plus execution time, not poll intervals. It needs a running poller, not an attached `rush` executor, and it shows results only when they arrive, rather than streaming them as they are produced. At startup `mush` asks `GET /api/v1/jobs/poller` whether a poller is attached and warns immediately when none is, because a submission without a poller queues forever; a job still queued after 10s draws the same warning.
 
-The prompt is honest about where it is. Where `rush` shows a pseudo-root confined to its base directory, `mush` has no confinement to display, so it shows the poller's real filesystem instead: at startup it learns the poller's working directory by running `pwd` through the queue, and every `cd` is validated by running `cd <arg> && pwd` there, so the prompt moves only where the poller can actually go and always displays the real absolute path. A failed `cd` prints the shell's error and leaves the prompt where it was, and a bare `cd` goes to the poller's home, as in a shell. When the directory cannot be known (no poller attached yet, or `--no-wait`, where results never come back) the prompt shows `?` rather than pretending. The jobs API carries no directory field, so the absolute path is prefixed onto each submitted command as a `cd`. Interrupting a wait abandons the wait but prints the job identifier, so the result can still be fetched later with `musings get`. With `--no-wait`, `mush` submits each line and prints its queued job identifier without waiting:
+The prompt is honest about where it is. Like `rush`, `mush` shows the executing side's real filesystem: at startup it learns the poller's working directory by running `pwd` through the queue, and every `cd` is validated by running `cd <arg> && pwd` there, so the prompt moves only where the poller can actually go and always displays the real absolute path. A failed `cd` prints the shell's error and leaves the prompt where it was, and a bare `cd` goes to the poller's home, as in a shell. When the directory cannot be known (no poller attached yet, or `--no-wait`, where results never come back) the prompt shows `?` rather than pretending. The jobs API carries no directory field, so the absolute path is prefixed onto each submitted command as a `cd`. Interrupting a wait abandons the wait but prints the job identifier, so the result can still be fetched later with `musings get`. With `--no-wait`, `mush` submits each line and prints its queued job identifier without waiting:
 
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1
@@ -248,21 +248,21 @@ Rush is an extension, not the point of musings. Where jobs and mush bring work i
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1
 export MUSINGS_TOKEN=<token>
-export MUSINGS_RUSH_BASE_DIR=/work
-musings-rush-executor     # attach; commands are confined to /work
+musings-rush-executor                                # whole machine, starting here
+MUSINGS_RUSH_BASE_DIR=/work musings-rush-executor --clamp   # confined to /work
 ----
 
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1
 export MUSINGS_TOKEN=<token>
 rush
-musings:/$ ls
-musings:/$ cd reports
-musings:/reports$ cat disk.txt
-musings:/reports$ quit
+rush:/home/muse$ ls
+rush:/home/muse$ cd reports
+rush:/home/muse/reports$ cat disk.txt
+rush:/home/muse/reports$ quit
 ----
 
-Rush holds the working directory and intercepts `cd` itself; every other line is sent with the current directory, and the server clamps it to the base. Because commands genuinely run on the executor's machine, the ordinary Unix vocabulary comes for free. See link:docs/comms.adoc[the communication contracts] for the full design, including the streaming envelope and the fail-fast rule when no executor is attached.
+Attaching an executor exposes its machine to whoever holds the token, so the executor is the party that decides how much of it: by default any directory may be named, as in a shell session, and `--clamp` confines every command to `MUSINGS_RUSH_BASE_DIR` and refuses escapes. The server never judges a directory; it relays what the submitter wrote and the executor rules on it. Rush holds the working directory and intercepts `cd` itself, but honestly: at startup it runs `pwd` through the rendezvous to learn where the executor starts, and every `cd` is a probe of the candidate directory, so a path that does not exist or that a clamped executor refuses is reported and the prompt stays put. Because commands genuinely run on the executor's machine, the ordinary Unix vocabulary comes for free. See link:docs/comms.adoc[the communication contracts] for the full design, including the streaming envelope and the fail-fast rule when no executor is attached.
 
 === The ChRIS mortal mode
 

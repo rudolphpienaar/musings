@@ -18,8 +18,10 @@ class RushSubmitRequest(BaseModel):
 
     Attributes:
         command: Command string for the executor to run.
-        cwd: Working directory for the command, relative to the
-            executor's base directory; empty means the base itself.
+        cwd: Working directory for the command, as the executor will
+            interpret it: an absolute path on the executor's machine,
+            or a path relative to the executor's base directory. Empty
+            means the base itself. The server relays it unjudged.
     """
 
     command: str = Field(min_length=1)
@@ -32,7 +34,7 @@ class RushSubmission(BaseModel):
     Attributes:
         submissionId: Server-assigned identifier for this submission.
         command: Command string to run.
-        cwd: Working directory, relative to the executor base.
+        cwd: Working directory, as submitted.
     """
 
     submissionId: str

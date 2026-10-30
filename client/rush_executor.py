@@ -6,16 +6,26 @@ claimed command through hostlib, streams output chunks back as they
 arrive, and closes with the result envelope. It only needs outbound
 connections, like the job poller.
 
+Attaching an executor is the act of exposing this machine to whoever
+holds the token, and the executor is the one party entitled to decide
+how much of it. By default it is unconfined: a submission names any
+directory on this machine and the command runs there, exactly like a
+shell session would. ``--clamp`` confines every command to
+``MUSINGS_RUSH_BASE_DIR`` instead, refusing a working directory that
+escapes it. The server never judges directories; this is where that
+decision lives, on the disk it concerns.
+
 Run with::
 
     export MUSINGS_URL=http://127.0.0.1:8000/api/v1
     export MUSINGS_TOKEN=<token>
-    export MUSINGS_RUSH_BASE_DIR=/work   # commands are confined here
-    musings-rush-executor
+    musings-rush-executor                 # whole machine, starting here
+    MUSINGS_RUSH_BASE_DIR=/work musings-rush-executor --clamp
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import socket
 import sys
@@ -94,25 +104,34 @@ class ChunkForwardSink(SinkBase):
         self._chunk_post("stderr", data)
 
 
-def cwd_resolve(baseDir: str, cwd: str) -> str | None:
-    """Resolve a submission's working directory under the base.
+def cwd_resolve(baseDir: str, cwd: str, clamp: bool) -> str | None:
+    """Resolve a submission's working directory on this machine.
 
     Args:
-        baseDir: Executor base directory; commands are confined here.
-        cwd: Working directory relative to base ("" is the base).
+        baseDir: Executor base directory: where an empty ``cwd`` lands,
+            and the boundary when clamped.
+        cwd: Submitted working directory. Absolute paths stand on their
+            own; relative ones are joined to the base.
+        clamp: When True, a resolved path outside the base is refused.
 
     Returns:
-        The resolved absolute path, or None when it escapes the base.
+        The resolved absolute path, or None when clamped and the path
+        escapes the base.
     """
     base = Path(baseDir).resolve()
     target = (base / cwd).resolve() if cwd else base
-    if not target.is_relative_to(base):
+    if clamp and not target.is_relative_to(base):
         return None
     return str(target)
 
 
 def submission_execute(
-    client: httpx.Client, submission: dict, baseDir: str, timeoutSeconds: int, maxChars: int
+    client: httpx.Client,
+    submission: dict,
+    baseDir: str,
+    timeoutSeconds: int,
+    maxChars: int,
+    clamp: bool = False,
 ) -> None:
     """Run one submission and report its envelope.
 
@@ -122,10 +141,16 @@ def submission_execute(
         baseDir: Executor base directory.
         timeoutSeconds: Execution timeout.
         maxChars: Output character cap.
+        clamp: Refuse working directories outside the base.
     """
     submissionId = submission["submissionId"]
-    resolved = cwd_resolve(baseDir, submission["cwd"])
+    resolved = cwd_resolve(baseDir, submission["cwd"], clamp)
+    refusal: str | None = None
     if resolved is None:
+        refusal = "Working directory escapes base."
+    elif not Path(resolved).is_dir():
+        refusal = f"No such directory: {resolved}"
+    if refusal is not None:
         client.post(
             f"/rush/{submissionId}/result",
             json={
@@ -133,7 +158,7 @@ def submission_execute(
                 "returncode": None,
                 "stdout": "",
                 "stderr": "",
-                "errors": ["Working directory escapes base."],
+                "errors": [refusal],
                 "truncated": False,
                 "durationSeconds": 0.0,
             },
@@ -172,8 +197,16 @@ def executor_run(argv: list[str] | None = None) -> None:
     """Run the executor loop until interrupted.
 
     Args:
-        argv: Unused; accepted for console-script symmetry.
+        argv: Argument list; None means sys.argv.
     """
+    parser = argparse.ArgumentParser(description="Attach a rush executor to musings.")
+    parser.add_argument(
+        "--clamp",
+        action="store_true",
+        help="Confine every command to MUSINGS_RUSH_BASE_DIR; by default any "
+        "directory on this machine may be named.",
+    )
+    args = parser.parse_args(argv)
     env_load()
     baseDir = os.environ.get("MUSINGS_RUSH_BASE_DIR", ".")
     executorId = os.environ.get(
@@ -184,7 +217,15 @@ def executor_run(argv: list[str] | None = None) -> None:
 
     # The next-poll timeout exceeds the server's 25s long-poll wait.
     client = client_build(timeout=35.0)
-    print(f"Executor {executorId} attached, base {baseDir}.", flush=True)
+    baseShown = str(Path(baseDir).resolve())
+    if args.clamp:
+        print(f"Executor {executorId} attached, confined to {baseShown}.", flush=True)
+    else:
+        print(
+            f"Executor {executorId} attached, unconfined; commands may run anywhere on "
+            f"this machine as this user, starting in {baseShown}.",
+            flush=True,
+        )
     try:
         while True:
             try:
@@ -194,7 +235,9 @@ def executor_run(argv: list[str] | None = None) -> None:
                 response.raise_for_status()
                 submission = response.json()
                 print(f"Claimed {submission['submissionId']}: {submission['command']}", flush=True)
-                submission_execute(client, submission, baseDir, timeoutSeconds, maxChars)
+                submission_execute(
+                    client, submission, baseDir, timeoutSeconds, maxChars, clamp=args.clamp
+                )
             except httpx.HTTPError as error:
                 print(f"Executor error: {error}", file=sys.stderr)
                 time.sleep(5)

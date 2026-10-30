@@ -172,13 +172,14 @@ musings eot --reason "all data delivered"
 
 For the shell feel over the job queue, with a poller running, run `mush`. Each line becomes a job and mush long-polls for its result, so output appears the moment the poller posts it. At startup mush warns immediately when no poller is attached, since without one every command queues forever. `mush --no-wait` submits without waiting.
 
-For the same shell feel over the `rush` extension instead, attach an executor confined to a base directory in one terminal:
+For the same shell feel over the `rush` extension instead, attach an executor in one terminal. Attaching is the grant: by default the executor runs commands anywhere on its machine, starting in the directory it was launched from; `--clamp` confines them to `MUSINGS_RUSH_BASE_DIR` instead:
 
 ----
 export MUSINGS_URL=http://127.0.0.1:8000/api/v1
 export MUSINGS_TOKEN=<same token>
-export MUSINGS_RUSH_BASE_DIR=./data
 musings-rush-executor
+# or, confined:
+MUSINGS_RUSH_BASE_DIR=./data musings-rush-executor --clamp
 ----
 
 In another, run rush:

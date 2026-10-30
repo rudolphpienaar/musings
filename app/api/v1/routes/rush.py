@@ -8,7 +8,7 @@ through a long-poll, so they only need outbound connections.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 from app.core.security import token_verify
@@ -18,7 +18,6 @@ from app.services.rush_store import (
     RushStore,
     UnclaimedSubmissionError,
     UnknownSubmissionError,
-    cwd_validate,
     rush_store_get,
 )
 
@@ -45,16 +44,14 @@ async def rush_post(
     Returns:
         A streaming newline-delimited JSON response.
 
+    The working directory is relayed as written. Whether it is allowed
+    is the executor's decision, made on the machine it refers to.
+
     Raises:
-        HTTPException: 400 on an escaping working directory, 503
-            when no executor is attached.
+        HTTPException: 503 when no executor is attached.
     """
     try:
-        cwd = cwd_validate(payload.cwd)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    try:
-        record = store.submission_create(payload.command, cwd)
+        record = store.submission_create(payload.command, payload.cwd)
     except NoExecutorError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     return StreamingResponse(
@@ -65,6 +62,7 @@ async def rush_post(
 
 @router.get("/rush/next")
 async def rush_next(
+    request: Request,
     executorId: str = "default",
     store: RushStore = Depends(rush_store_get),
     _token: str = Depends(token_verify),
@@ -73,9 +71,12 @@ async def rush_next(
 
     This is the executor's long-poll: it returns the next
     submission, or 204 when the wait expires with nothing pending.
-    Every call also marks the executor as attached.
+    Every call also marks the executor as attached. An executor that
+    disconnects while parked here claims nothing: the wait watches
+    the connection, so a dead executor cannot swallow a submission.
 
     Args:
+        request: The incoming request, watched for disconnection.
         executorId: Executor identifier, for presence tracking.
         store: Rendezvous store.
         _token: Verified bearer token (unused beyond verification).
@@ -83,7 +84,7 @@ async def rush_next(
     Returns:
         The claimed submission, or an empty 204 response.
     """
-    submission = await store.submission_claim(executorId)
+    submission = await store.submission_claim(executorId, request.is_disconnected)
     if submission is None:
         return Response(status_code=204)
     return submission

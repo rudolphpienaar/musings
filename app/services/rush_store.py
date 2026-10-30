@@ -4,7 +4,10 @@ The store holds submissions, the pending queue, and executor
 presence. A submitter's request stays open on a per-submission
 asyncio queue; the executor claims through the pending queue and
 posts chunks and the final envelope into that queue. The store
-never executes anything itself. See ``docs/comms.adoc``.
+never executes anything itself, and it never judges a working
+directory either: the executor is the one party entitled to decide
+what may run where on its own disk, so ``cwd`` passes through as the
+submitter wrote it. See ``docs/comms.adoc``.
 """
 
 from __future__ import annotations
@@ -14,8 +17,8 @@ import json
 import time
 import uuid
 from collections import deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from app.models.rush import (
     RushChunk,
@@ -35,34 +38,6 @@ class UnknownSubmissionError(Exception):
 
 class UnclaimedSubmissionError(Exception):
     """Raised when a chunk or result names an unclaimed submission."""
-
-
-def cwd_validate(cwd: str) -> str:
-    """Validate and normalize a client-supplied working directory.
-
-    Args:
-        cwd: Directory relative to the executor base; empty or ``.``
-            means the base itself.
-
-    Returns:
-        The normalized relative path, or ``""`` for the base itself.
-
-    Raises:
-        ValueError: When the path is absolute or escapes the base.
-    """
-    if not cwd or cwd == ".":
-        return ""
-    path = Path(cwd)
-    if path.is_absolute():
-        raise ValueError(f"Absolute working directory rejected: {cwd!r}.")
-    parts: list[str] = []
-    for part in path.parts:
-        if part in ("", "."):
-            continue
-        if part == "..":
-            raise ValueError(f"Parent escape rejected: {cwd!r}.")
-        parts.append(part)
-    return "/".join(parts)
 
 
 @dataclass
@@ -155,7 +130,7 @@ class RushStore:
 
         Args:
             command: Command string for the executor to run.
-            cwd: Normalized working directory, relative to base.
+            cwd: Working directory, passed through to the executor.
 
         Returns:
             The new record, already queued for claiming.
@@ -176,19 +151,34 @@ class RushStore:
         self._pending.append(submission.submissionId)
         return record
 
-    async def submission_claim(self, executorId: str) -> RushSubmission | None:
+    async def submission_claim(
+        self,
+        executorId: str,
+        isDisconnected: Callable[[], Awaitable[bool]] | None = None,
+    ) -> RushSubmission | None:
         """Claim the next pending submission, waiting if necessary.
+
+        A long-poll whose executor has gone away must never claim: the
+        submission would be marked claimed by a process that will not
+        run it, and the submitter would wait on a stream nobody feeds
+        until the presence window expired. So before each claim the
+        wait asks whether the requesting connection is still there.
 
         Args:
             executorId: Claiming executor, recorded for presence.
+            isDisconnected: Awaitable probe for the requesting
+                connection having dropped; None means never.
 
         Returns:
-            The claimed submission, or None when the wait expires.
+            The claimed submission, or None when the wait expires or
+            the connection dropped.
         """
         self.executor_touch(executorId)
         self.sweep_stale()
         deadline = time.monotonic() + self.nextWaitSeconds
         while True:
+            if isDisconnected is not None and await isDisconnected():
+                return None
             while self._pending:
                 submissionId = self._pending.popleft()
                 record = self._records.get(submissionId)
