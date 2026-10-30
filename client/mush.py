@@ -49,31 +49,20 @@ import time
 
 import httpx
 
-from client.env import env_load
+from client import transport
 
 
 def client_build() -> httpx.Client:
     """Build an authenticated HTTP client from the environment.
 
     Returns:
-        A client pointed at the configured service URL.
+        A client pointed at the configured service URL, with TLS trust
+        resolved by ``client.transport``.
 
     Raises:
         SystemExit: When MUSINGS_URL or MUSINGS_TOKEN is unset.
     """
-    env_load()
-    baseUrl = os.environ.get("MUSINGS_URL", "")
-    token = os.environ.get("MUSINGS_TOKEN", "")
-    if not baseUrl or not token:
-        print("MUSINGS_URL and MUSINGS_TOKEN must both be set.", file=sys.stderr)
-        raise SystemExit(2)
-    # trust_env=False: see client.cli for why proxy env is bypassed.
-    return httpx.Client(
-        base_url=baseUrl,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=30.0,
-        trust_env=False,
-    )
+    return transport.client_build(timeout=30.0)
 
 
 def command_wrap(command: str, cwd: str) -> str:

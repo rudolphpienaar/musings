@@ -4,7 +4,9 @@ We take security issues seriously. If you discover a vulnerability, please repor
 
 == Threat model
 
-Whoever holds the bearer token can execute shell commands as the user running the poller, and can write files under the configured base directory. Treat the token as a shell credential: generate it randomly, distribute it out of band, never commit it, and rotate it on suspicion. Do not expose an unauthenticated instance to the public internet, and put HTTPS in front of any publicly reachable deployment -- bearer tokens are only as safe as their transport.
+Whoever holds the bearer token can execute shell commands as the user running the poller, and can write files under the configured base directory. Treat the token as a shell credential: generate it randomly, distribute it out of band, never commit it, and rotate it on suspicion.
+
+Bearer tokens are only as safe as their transport, so the server terminates TLS itself when `MUSINGS_URL` is `https`, and refuses to listen beyond loopback over plain `http` unless started with `--insecure`. The intended deployment pins a private CA (see `scripts/pki_make.sh` and `HOWTORUN.adoc`) and turns on mutual TLS with `MUSINGS_TLS_CLIENT_CA`, so a connection needs a client certificate before the token is even read. Transport security does not confine what a job may do: a poller runs commands as its user with no allowlist, so the token and any client key must still be treated as shell credentials.
 
 == Reporting a Vulnerability
 

@@ -27,6 +27,7 @@ from hostlib import JobSpec, job_run
 from hostlib.sink import SinkBase
 
 from client.env import env_load
+from client.transport import client_build
 from client.poller import output_truncate
 
 
@@ -174,11 +175,6 @@ def executor_run(argv: list[str] | None = None) -> None:
         argv: Unused; accepted for console-script symmetry.
     """
     env_load()
-    baseUrl = os.environ.get("MUSINGS_URL", "")
-    token = os.environ.get("MUSINGS_TOKEN", "")
-    if not baseUrl or not token:
-        print("MUSINGS_URL and MUSINGS_TOKEN must both be set.", file=sys.stderr)
-        raise SystemExit(2)
     baseDir = os.environ.get("MUSINGS_RUSH_BASE_DIR", ".")
     executorId = os.environ.get(
         "MUSINGS_RUSH_EXECUTOR_ID", f"{socket.gethostname()}-{os.getpid()}"
@@ -186,14 +182,8 @@ def executor_run(argv: list[str] | None = None) -> None:
     timeoutSeconds = int(os.environ.get("JOB_TIMEOUT_SECONDS", "300"))
     maxChars = int(os.environ.get("MAX_OUTPUT_CHARS", "100000"))
 
-    # trust_env=False: see client.cli for why proxy env is bypassed.
     # The next-poll timeout exceeds the server's 25s long-poll wait.
-    client = httpx.Client(
-        base_url=baseUrl,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=35.0,
-        trust_env=False,
-    )
+    client = client_build(timeout=35.0)
     print(f"Executor {executorId} attached, base {baseDir}.", flush=True)
     try:
         while True:

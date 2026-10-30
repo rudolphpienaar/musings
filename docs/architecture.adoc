@@ -75,7 +75,7 @@ Job and message state is in process memory and dies with the process. This is a 
 
 == Authentication
 
-One shared bearer token, read from `MUSINGS_TOKEN`, compared in constant time, required on every protected route. The server refuses to start without it. The health and root routes are public by design. Per-client tokens, scoped tokens, and token expiry are roadmap items.
+One shared bearer token, read from `MUSINGS_TOKEN`, compared in constant time, required on every protected route. The server refuses to start without it. The health and root routes are public by design. Per-client tokens, scoped tokens, and token expiry are roadmap items. Transport is decided by the scheme of `MUSINGS_URL`: for `https` the server terminates TLS in uvicorn with `MUSINGS_TLS_CERT` and `MUSINGS_TLS_KEY`, and `MUSINGS_TLS_CLIENT_CA` makes it demand a client certificate in the handshake, which is the one control that stops the token from being the whole credential. Every client builds its connection through `client/transport.py`, which pins `MUSINGS_CA_CERT` and presents `MUSINGS_CLIENT_CERT`, so the trust decisions live in one module. The entry point refuses to listen beyond loopback over plain `http` without `--insecure`.
 
 == Deployment modes
 

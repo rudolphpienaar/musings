@@ -43,6 +43,7 @@ import httpx
 from hostlib import JobSpec, job_run
 
 from client.env import env_load
+from client.transport import client_build
 
 
 @dataclass
@@ -162,24 +163,14 @@ def poller_run(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     env_load()
-    baseUrl = os.environ.get("MUSINGS_URL", "")
-    token = os.environ.get("MUSINGS_TOKEN", "")
-    if not baseUrl or not token:
-        print("MUSINGS_URL and MUSINGS_TOKEN must both be set.", file=sys.stderr)
-        raise SystemExit(2)
     timeoutSeconds = int(os.environ.get("JOB_TIMEOUT_SECONDS", "300"))
     maxChars = int(os.environ.get("MAX_OUTPUT_CHARS", "100000"))
     pollInterval = float(os.environ.get("POLL_INTERVAL_SECONDS", "10"))
     waitSeconds = 0.0 if args.once else float(os.environ.get("POLL_WAIT_SECONDS", "20"))
 
-    # trust_env=False: see client.cli for why proxy env is bypassed.
     # The read timeout must outlive the server-side long-poll wait.
-    client = httpx.Client(
-        base_url=baseUrl,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=httpx.Timeout(30.0, read=waitSeconds + 30.0),
-        trust_env=False,
-    )
+    client = client_build(timeout=httpx.Timeout(30.0, read=waitSeconds + 30.0))
+    baseUrl = str(client.base_url)
     print(
         f"Polling {baseUrl} for jobs; commands will execute as this user, here.",
         flush=True,

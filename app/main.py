@@ -24,6 +24,13 @@ the same box. It changes the security posture: the server host becomes
 the execution target, and whoever holds the token can run commands
 here. Without the flag the server only ever relays; execution requires
 someone to deliberately start ``musings-poller`` elsewhere.
+
+Transport follows the scheme of ``MUSINGS_URL``: ``https`` makes the
+server terminate TLS with ``MUSINGS_TLS_CERT`` and ``MUSINGS_TLS_KEY``,
+and ``MUSINGS_TLS_CLIENT_CA`` additionally demands a client certificate
+on every connection. Listening beyond loopback over plain ``http`` is
+refused unless ``--insecure`` is also given, so a bearer token crossing
+a network in the clear is, like execution, something typed on purpose.
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import sys
 import threading
 import time
 
@@ -41,7 +49,8 @@ from fastapi import FastAPI
 from app import __version__
 from app.api.v1.router import api_router
 from app.api.v1.routes.system import health_get
-from app.core.config import settings_get
+from app.core.config import LOOPBACK_HOSTS, TlsConfigError, settings_get
+from client.transport import client_build
 
 logging.basicConfig(level=logging.INFO)
 
@@ -61,7 +70,7 @@ def app_create() -> FastAPI:
 app = app_create()
 
 
-def poller_thread_start(port: int) -> threading.Thread:
+def poller_thread_start(port: int, scheme: str) -> threading.Thread:
     """Start an in-process job poller against this server.
 
     The poller runs in a daemon thread, so it dies with the server
@@ -75,19 +84,32 @@ def poller_thread_start(port: int) -> threading.Thread:
     to answer its health route before entering the poll loop, so
     startup order does not matter.
 
+    Under TLS the poller is a client like any other: it verifies the
+    server against ``MUSINGS_CA_CERT`` and, when the server demands a
+    client certificate, presents ``MUSINGS_CLIENT_CERT``. Those are
+    taken from the settings so a ``.env``-configured server needs no
+    exports, and the server certificate must therefore name
+    ``127.0.0.1`` among its subject alternative names.
+
     Args:
         port: Port the server listens on.
+        scheme: ``"http"`` or ``"https"``, matching how the server listens.
 
     Returns:
         The started daemon thread.
     """
     settings = settings_get()
-    # The poller reads its target and token from the environment; the
-    # token comes from settings so a .env-configured server needs no
-    # exports, and the URL is forced to loopback for the reason above.
+    # The poller reads its target, token, and trust files from the
+    # environment; the URL is forced to loopback for the reason above.
     os.environ.setdefault("MUSINGS_TOKEN", settings.musingsToken)
-    os.environ["MUSINGS_URL"] = f"http://127.0.0.1:{port}/api/v1"
-    healthUrl = os.environ["MUSINGS_URL"] + "/health"
+    for name, path in (
+        ("MUSINGS_CA_CERT", settings.caCertFile),
+        ("MUSINGS_CLIENT_CERT", settings.clientCertFile),
+        ("MUSINGS_CLIENT_KEY", settings.clientKeyFile),
+    ):
+        if path is not None:
+            os.environ.setdefault(name, str(path))
+    os.environ["MUSINGS_URL"] = f"{scheme}://127.0.0.1:{port}/api/v1"
 
     def poller_delayed_run() -> None:
         """Wait for the server to come up, then run the poll loop."""
@@ -96,12 +118,13 @@ def poller_thread_start(port: int) -> threading.Thread:
         from client.poller import poller_run
 
         deadline = time.monotonic() + 15.0
-        while time.monotonic() < deadline:
-            try:
-                httpx.get(healthUrl, timeout=2.0, trust_env=False)
-                break
-            except httpx.HTTPError:
-                time.sleep(0.25)
+        with client_build(timeout=2.0) as client:
+            while time.monotonic() < deadline:
+                try:
+                    client.get("/health")
+                    break
+                except httpx.HTTPError:
+                    time.sleep(0.25)
         poller_run([])
 
     thread = threading.Thread(
@@ -136,10 +159,32 @@ def server_run(argv: list[str] | None = None) -> None:
         help="Also run a job poller in this process: commands submitted "
         "to this server will execute on this host, as this user.",
     )
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Allow listening beyond loopback over plain http, sending the "
+        "bearer token in the clear. Refused otherwise.",
+    )
     args = parser.parse_args(argv)
     settings = settings_get()
     host = args.host or ("0.0.0.0" if args.public else "127.0.0.1")
     port = args.port or settings.port_derive()
+    try:
+        tlsConfig = settings.tlsServer_config()
+    except TlsConfigError as error:
+        print(f"musings-server: {error}", file=sys.stderr)
+        raise SystemExit(2) from error
+    if tlsConfig is None and host not in LOOPBACK_HOSTS and not args.insecure:
+        print(
+            "musings-server: refusing to listen on "
+            f"{host} over plain http; the bearer token would cross the network "
+            "in the clear. Make MUSINGS_URL https (see scripts/pki_make.sh), or "
+            "pass --insecure to accept that on purpose.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    scheme = "https" if tlsConfig is not None else "http"
     if args.with_poller:
-        poller_thread_start(port)
-    uvicorn.run(app, host=host, port=port)
+        poller_thread_start(port, scheme)
+    tlsKwargs = tlsConfig.uvicornKwargs_get() if tlsConfig is not None else {}
+    uvicorn.run(app, host=host, port=port, **tlsKwargs)

@@ -8,6 +8,10 @@ services:
     environment:
       - MUSINGS_TOKEN=${MUSINGS_TOKEN:?Set MUSINGS_TOKEN before running compose}
       - MUSINGS_BASE_DIR=/data
+    # Plain http on every interface, stated on purpose: this compose file
+    # is for local development or for sitting behind a TLS-terminating
+    # proxy. For TLS in the container itself see HOWTORUN.adoc, Docker.
+    command: ["musings-server", "--public", "--insecure"]
     volumes:
       - type: volume
         source: MUSINGS_DATA

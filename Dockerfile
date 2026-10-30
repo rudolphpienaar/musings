@@ -21,5 +21,8 @@ ENV MUSINGS_BASE_DIR=/data
 # The token must be supplied at run time: -e MUSINGS_TOKEN=<token>
 # A container is reached from outside by definition, so the service
 # listens on every interface. The port is 8000 unless MUSINGS_URL says
-# otherwise.
+# otherwise. Listening on every interface over plain http is refused:
+# either mount a PKI and set an https MUSINGS_URL with MUSINGS_TLS_CERT
+# and MUSINGS_TLS_KEY (see HOWTORUN.adoc), or override the command with
+# `musings-server --public --insecure` behind a TLS-terminating proxy.
 CMD ["musings-server", "--public"]

@@ -73,6 +73,43 @@ The server alone only relays: it queues jobs, stores messages, and writes `/save
 musings-server --with-poller
 ----
 
+Listening beyond loopback over plain `http` is refused: the bearer token would cross the network in the clear. Either make the service `https` (next section) or state the acceptance with `musings-server --public --insecure`.
+
+== 2a. TLS with a private CA
+
+A musings server is reached by one or two parties the operator already knows, on an address that usually has no DNS name, so a public certificate authority buys nothing. Mint a private one with the bundled script. It uses only `openssl`, writes everything to `~/musings/pki` (set `PKI_DIR` to change that), and never into the repository.
+
+----
+scripts/pki_make.sh ca
+scripts/pki_make.sh server --san IP:<lan address>,IP:<public address>
+scripts/pki_make.sh client --name <remote party>
+scripts/pki_make.sh client --name $(hostname)
+scripts/pki_make.sh show
+----
+
+The server certificate always names `localhost` and `127.0.0.1`, because an embedded poller dials loopback; add every other address a client will use with `--san`. The second `client` line is for this host's own clients, the embedded poller included, since under mutual TLS they must present a certificate like anyone else.
+
+Then make `MUSINGS_URL` an `https` URL and point the server at its files. `MUSINGS_TLS_CLIENT_CA` is optional and turns on mutual TLS: every connection must present a certificate signed by the CA, so holding the token is no longer enough to reach a route.
+
+----
+MUSINGS_URL=https://127.0.0.1:8000/api/v1
+MUSINGS_TLS_CERT=/home/me/musings/pki/server.pem
+MUSINGS_TLS_KEY=/home/me/musings/pki/server.key
+MUSINGS_TLS_CLIENT_CA=/home/me/musings/pki/ca.pem
+MUSINGS_CA_CERT=/home/me/musings/pki/ca.pem
+MUSINGS_CLIENT_CERT=/home/me/musings/pki/clients/<this host>.pem
+MUSINGS_CLIENT_KEY=/home/me/musings/pki/clients/<this host>.key
+----
+
+The last three are client-side: `MUSINGS_CA_CERT` pins the server certificate to your CA, and the certificate pair is what this host's clients present. A remote party needs `ca.pem` plus its own pair, handed over a channel you trust, and confirms the CA fingerprint printed by `show` out of band. With curl that party speaks to the server as:
+
+----
+curl --cacert ca.pem --cert <name>.pem --key <name>.key \
+  -H "Authorization: Bearer <token>" https://<public address>:<port>/api/v1/health
+----
+
+Lifetimes are deliberate: the CA lives ten years, the server certificate a year, a client certificate 90 days because its key sits on someone else's machine. Renewal is rerunning the `server` or `client` subcommand after removing the old files, then restarting the server or re-sending the pair.
+
 == 3. Run the poller
 
 The poller is the execution side of the job queue, and starting it is the explicit grant of shell access: claimed commands run as the user it runs as, in the directory it runs in. In another terminal, with the same token and the service URL:
@@ -119,6 +156,8 @@ rush
 
 == 6. Docker
 
+The image listens on every interface, as a container must, so it needs either TLS files mounted in and an `https` `MUSINGS_URL`, or an explicit `--insecure` when a TLS-terminating proxy sits in front of it. Plain:
+
 ----
 docker build -t musings .
 docker run --rm \
@@ -126,6 +165,22 @@ docker run --rm \
   -e MUSINGS_BASE_DIR=/data \
   -p 8000:8000 \
   -v ./data:/data \
+  musings musings-server --public --insecure
+----
+
+With the private CA from section 2a:
+
+----
+docker run --rm \
+  -e MUSINGS_TOKEN=$(openssl rand -hex 32) \
+  -e MUSINGS_BASE_DIR=/data \
+  -e MUSINGS_URL=https://127.0.0.1:8000/api/v1 \
+  -e MUSINGS_TLS_CERT=/pki/server.pem \
+  -e MUSINGS_TLS_KEY=/pki/server.key \
+  -e MUSINGS_TLS_CLIENT_CA=/pki/ca.pem \
+  -p 8000:8000 \
+  -v ./data:/data \
+  -v ~/musings/pki:/pki:ro \
   musings
 ----
 

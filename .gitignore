@@ -31,3 +31,9 @@ data/
 Thumbs.db
 # Local secrets (never commit)
 .env
+
+# Private PKI material (minted by scripts/pki_make.sh; lives outside the repo)
+*.pem
+*.key
+*.srl
+pki/
