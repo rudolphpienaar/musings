@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 from app.core.security import token_verify
-from app.models.rush import RushChunk, RushResult, RushSubmitRequest
+from app.models.rush import ExecutorStatus, RushChunk, RushResult, RushSubmitRequest
 from app.services.rush_store import (
     NoExecutorError,
     RushStore,
@@ -88,6 +88,28 @@ async def rush_next(
     if submission is None:
         return Response(status_code=204)
     return submission
+
+
+@router.get("/rush/executor", response_model=ExecutorStatus)
+async def executor_status_get(
+    store: RushStore = Depends(rush_store_get),
+    _token: str = Depends(token_verify),
+) -> ExecutorStatus:
+    """Report whether a rush executor is attached, and when it was last seen.
+
+    The companion of ``GET /jobs/poller`` for the reverse direction. A
+    submission to ``/rush`` fails fast without an executor, and this
+    route says whether that absence is a restart gap of seconds or an
+    executor gone for hours.
+
+    Args:
+        store: Rendezvous store.
+        _token: Verified bearer token (unused beyond verification).
+
+    Returns:
+        The executor attachment status.
+    """
+    return store.executor_status()
 
 
 @router.post("/rush/{submissionId}/chunk", status_code=202)

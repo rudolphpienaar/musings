@@ -104,7 +104,12 @@ def items_stream(client: httpx.Client, command: str, cwd: str) -> Iterator[dict]
     try:
         with client.stream("POST", "/rush", json={"command": command, "cwd": cwd}) as response:
             if response.status_code == 503:
-                yield {"type": "error", "errors": "No executor attached."}
+                response.read()
+                try:
+                    detail = response.json().get("detail", "No executor attached.")
+                except ValueError:
+                    detail = "No executor attached."
+                yield {"type": "error", "errors": detail}
                 return
             response.raise_for_status()
             for line in response.iter_lines():

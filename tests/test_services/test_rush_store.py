@@ -119,3 +119,52 @@ def test_disconnected_long_poll_does_not_claim() -> None:
     assert second is not None
     assert second.submissionId == record.submission.submissionId
     assert record.executorId == "live"
+
+
+def test_executor_status_tracks_last_seen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Status reports the newest executor and whether it is within the window."""
+    store = RushStore(presenceWindowSeconds=10.0)
+    assert store.executor_status().attached is False
+    assert store.executor_status().lastSeenSecondsAgo is None
+    clock = [1000.0]
+    monkeypatch.setattr("app.services.rush_store.time.monotonic", lambda: clock[0])
+    store.executor_touch("muse-1")
+    status = store.executor_status()
+    assert status.attached is True and status.executorId == "muse-1"
+    clock[0] += 11.0
+    status = store.executor_status()
+    assert status.attached is False
+    assert status.lastSeenSecondsAgo == pytest.approx(11.0)
+    assert "last seen 11s ago" in store.absence_describe()
+
+
+def test_executor_attach_and_loss_are_logged(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The server log carries the executor timeline, once per transition."""
+    store = RushStore(presenceWindowSeconds=10.0)
+    clock = [1000.0]
+    monkeypatch.setattr("app.services.rush_store.time.monotonic", lambda: clock[0])
+    with caplog.at_level("INFO", logger="musings.rush"):
+        store.executor_touch("muse-1")
+        store.executor_touch("muse-1")
+        clock[0] += 11.0
+        store.presence_sweep()
+        store.presence_sweep()
+        clock[0] += 1.0
+        store.executor_touch("muse-1")
+    messages = [record.getMessage() for record in caplog.records]
+    assert messages == [
+        "rush executor muse-1 attached",
+        "rush executor muse-1 lost; last poll 11s ago",
+        "rush executor muse-1 attached",
+    ]
+
+
+def test_seconds_describe_is_coarse() -> None:
+    """Durations render in the unit a human would use."""
+    from app.services.rush_store import seconds_describe
+
+    assert seconds_describe(42.7) == "42s"
+    assert seconds_describe(420.0) == "7m"
+    assert seconds_describe(3 * 3600 + 12 * 60 + 5) == "3h12m"

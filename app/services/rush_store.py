@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from collections import deque
@@ -21,15 +22,35 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from app.models.rush import (
+    ExecutorStatus,
     RushChunk,
     RushError,
     RushResult,
     RushSubmission,
 )
 
+logger = logging.getLogger("musings.rush")
+
 
 class NoExecutorError(Exception):
     """Raised when a submission arrives with no executor attached."""
+
+
+def seconds_describe(seconds: float) -> str:
+    """Render a duration for a human, coarsely.
+
+    Args:
+        seconds: Elapsed seconds.
+
+    Returns:
+        ``"42s"``, ``"7m"``, or ``"3h12m"`` as the size warrants.
+    """
+    whole = int(seconds)
+    if whole < 60:
+        return f"{whole}s"
+    if whole < 3600:
+        return f"{whole // 60}m"
+    return f"{whole // 3600}h{(whole % 3600) // 60:02d}m"
 
 
 class UnknownSubmissionError(Exception):
@@ -83,14 +104,38 @@ class RushStore:
         self._records: dict[str, RushRecord] = {}
         self._pending: deque[str] = deque()
         self._executors: dict[str, float] = {}
+        self._attachedAnnounced: set[str] = set()
 
     def executor_touch(self, executorId: str) -> None:
         """Record a poll from an executor.
+
+        The first poll from an executor, or the first after it was
+        reported lost, is logged as an attachment, so the server's own
+        log carries the timeline of executors coming and going.
 
         Args:
             executorId: Executor identifier from the poll request.
         """
         self._executors[executorId] = time.monotonic()
+        if executorId not in self._attachedAnnounced:
+            self._attachedAnnounced.add(executorId)
+            logger.info("rush executor %s attached", executorId)
+
+    def presence_sweep(self) -> None:
+        """Log executors that have fallen silent since they were announced.
+
+        Called from every presence check and from the server's periodic
+        sweeper, so a loss is logged within a sweep interval of the
+        presence window expiring, whether or not anyone submits.
+        """
+        now = time.monotonic()
+        for executorId in list(self._attachedAnnounced):
+            elapsed = now - self._executors.get(executorId, 0.0)
+            if elapsed > self.presenceWindowSeconds:
+                self._attachedAnnounced.discard(executorId)
+                logger.warning(
+                    "rush executor %s lost; last poll %.0fs ago", executorId, elapsed
+                )
 
     def executor_present(self) -> bool:
         """Report whether any executor has polled recently.
@@ -98,8 +143,41 @@ class RushStore:
         Returns:
             True when at least one executor is within the window.
         """
+        self.presence_sweep()
         now = time.monotonic()
         return any(now - seen <= self.presenceWindowSeconds for seen in self._executors.values())
+
+    def executor_status(self) -> ExecutorStatus:
+        """Report the most recently seen executor and how long ago that was.
+
+        Returns:
+            Attachment status; ``lastSeenSecondsAgo`` and ``executorId``
+            are None when no executor has ever polled this run.
+        """
+        self.presence_sweep()
+        if not self._executors:
+            return ExecutorStatus(attached=False)
+        executorId, seenAt = max(self._executors.items(), key=lambda item: item[1])
+        elapsed = time.monotonic() - seenAt
+        return ExecutorStatus(
+            attached=elapsed <= self.presenceWindowSeconds,
+            lastSeenSecondsAgo=elapsed,
+            executorId=executorId,
+        )
+
+    def absence_describe(self) -> str:
+        """Describe a missing executor for a fail-fast refusal.
+
+        Returns:
+            "No executor attached" followed by how long ago one was
+            last heard from, or that none was seen this run.
+        """
+        status = self.executor_status()
+        if status.lastSeenSecondsAgo is None:
+            return "No executor attached (none seen since the server started)."
+        return (
+            f"No executor attached (last seen {seconds_describe(status.lastSeenSecondsAgo)} ago)."
+        )
 
     def sweep_stale(self) -> None:
         """End streams whose executor disappeared or never claimed.
@@ -140,7 +218,7 @@ class RushStore:
         """
         self.sweep_stale()
         if not self.executor_present():
-            raise NoExecutorError("No executor attached.")
+            raise NoExecutorError(self.absence_describe())
         submission = RushSubmission(
             submissionId=uuid.uuid4().hex,
             command=command,

@@ -187,6 +187,7 @@ All routes live under `/api/v1` except the public root. Every route except `GET 
 | `POST /api/v1/save` | Save content to `dir`/`file` under the base directory. Traversal outside the base is a 400.
 | `POST /api/v1/rush` | Post a signal to the mailbox; the request blocks until an attached executor claims it, runs it outside the instance, and streams the response back as JSON lines closed by an execution envelope. 503 when no executor is attached.
 | `GET /api/v1/rush/next` | Executor long-poll: claim the next pending submission. 204 when the wait expires with nothing pending.
+| `GET /api/v1/rush/executor` | Whether an executor is attached, and how long ago one was last heard from.
 | `POST /api/v1/rush/{submissionId}/chunk` | Executor post: one output chunk for a claimed submission.
 | `POST /api/v1/rush/{submissionId}/result` | Executor post: the final execution envelope for a claimed submission.
 | `POST /api/v1/eot` | Write the EOT marker file and exit. Body must confirm with `confirm: "EOT"`.

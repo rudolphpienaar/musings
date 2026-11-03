@@ -31,6 +31,7 @@ class StreamStub:
     lines: list[dict]
     status: int = 200
     posted: list[tuple[str, str]] = field(default_factory=list)
+    body: dict = field(default_factory=lambda: {"detail": "No executor attached."})
 
     def stream(self, method: str, path: str, json: dict) -> "StreamStub":
         self.posted.append((json["command"], json["cwd"]))
@@ -48,6 +49,12 @@ class StreamStub:
 
     def raise_for_status(self) -> None:
         return None
+
+    def read(self) -> bytes:
+        return json.dumps(self.body).encode()
+
+    def json(self) -> dict:
+        return self.body
 
     def iter_lines(self):
         for item in self.lines:
@@ -113,3 +120,13 @@ def test_cd_remote_bare_cd_returns_to_base() -> None:
     stub = StreamStub([{"stream": "stdout", "data": "/work\n"}, result_item(True)])
     assert cd_remote(stub, "/work/deep", None) == "/work"  # type: ignore[arg-type]
     assert stub.posted == [("pwd", "")]
+
+
+def test_no_executor_shows_the_server_reason(capsys) -> None:
+    """A 503 prints the server's reason, which says how long the executor has been gone."""
+    from client.rush import command_run
+
+    stub = StreamStub([], status=503)
+    stub.body = {"detail": "No executor attached (last seen 3h12m ago)."}
+    command_run(stub, "ls", "/")  # type: ignore[arg-type]
+    assert "last seen 3h12m ago" in capsys.readouterr().err

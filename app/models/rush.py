@@ -93,3 +93,26 @@ class RushError(BaseModel):
 
     type: Literal["error"] = "error"
     errors: str
+
+
+class ExecutorStatus(BaseModel):
+    """Whether a rush executor is attached to this service.
+
+    An executor counts as attached when it has hit ``GET /rush/next``
+    within the server's presence window. Unlike the jobs API, ``/rush``
+    fails fast without one, so this is the thing to look at when a
+    submission is refused: it says how long ago the last executor was
+    heard from, which separates a restart gap of seconds from an
+    executor that has been gone for hours.
+
+    Attributes:
+        attached: True when an executor polled within the window.
+        lastSeenSecondsAgo: Seconds since the most recent poll by any
+            executor, or None when none has polled this run.
+        executorId: Identifier of the most recently seen executor, or
+            None when none has polled this run.
+    """
+
+    attached: bool
+    lastSeenSecondsAgo: float | None = None
+    executorId: str | None = None

@@ -58,3 +58,25 @@ def test_chunk_and_result_unknown_are_404(test_client, auth_headers) -> None:
         headers=auth_headers,
     )
     assert response.status_code == 404
+
+
+def test_executor_status_requires_auth(test_client) -> None:
+    """Executor presence is protected like every other route."""
+    assert test_client.get("/api/v1/rush/executor").status_code == 401
+
+
+def test_executor_status_follows_polls(test_client, auth_headers) -> None:
+    """Presence flips to attached once an executor long-polls."""
+    before = test_client.get("/api/v1/rush/executor", headers=auth_headers).json()
+    assert before == {"attached": False, "lastSeenSecondsAgo": None, "executorId": None}
+    test_client.get("/api/v1/rush/next", params={"executorId": "muse-1"}, headers=auth_headers)
+    after = test_client.get("/api/v1/rush/executor", headers=auth_headers).json()
+    assert after["attached"] is True
+    assert after["executorId"] == "muse-1"
+
+
+def test_fail_fast_detail_says_how_long_ago(test_client, auth_headers) -> None:
+    """The 503 reason tells the submitter whether an executor was ever here."""
+    response = test_client.post("/api/v1/rush", json={"command": "ls"}, headers=auth_headers)
+    assert response.status_code == 503
+    assert "none seen since the server started" in response.json()["detail"]

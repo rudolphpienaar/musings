@@ -36,12 +36,15 @@ a network in the clear is, like execution, something typed on purpose.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import os
 import socket
 import sys
 import threading
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
 import httpx
@@ -52,9 +55,44 @@ from app import __version__
 from app.api.v1.router import api_router
 from app.api.v1.routes.system import health_get
 from app.core.config import LOOPBACK_HOSTS, TlsConfigError, settings_get
+from app.services.rush_store import rush_store_get
 from client.transport import client_build
 
 logging.basicConfig(level=logging.INFO)
+
+
+PRESENCE_SWEEP_SECONDS = 15.0
+
+
+async def presence_sweep_loop() -> None:
+    """Log rush executors that fall silent, even when nobody submits.
+
+    The store notices a lost executor only when asked, so this task
+    asks every ``PRESENCE_SWEEP_SECONDS`` for the lifetime of the app.
+    The server log then carries the executor timeline on its own,
+    which is the evidence needed when an executor keeps dying on a
+    machine whose logs you cannot see.
+    """
+    while True:
+        await asyncio.sleep(PRESENCE_SWEEP_SECONDS)
+        rush_store_get().presence_sweep()
+
+
+@asynccontextmanager
+async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Run the presence sweeper for as long as the app serves.
+
+    Args:
+        app: The application being served.
+
+    Yields:
+        Nothing; the sweeper runs until the app shuts down.
+    """
+    sweeper = asyncio.create_task(presence_sweep_loop())
+    try:
+        yield
+    finally:
+        sweeper.cancel()
 
 
 def app_create() -> FastAPI:
@@ -63,7 +101,7 @@ def app_create() -> FastAPI:
     Returns:
         The configured application.
     """
-    app = FastAPI(title="musings", version=__version__)
+    app = FastAPI(title="musings", version=__version__, lifespan=app_lifespan)
     app.include_router(api_router, prefix="/api/v1")
     app.get("/")(health_get)
     return app

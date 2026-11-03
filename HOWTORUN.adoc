@@ -182,6 +182,13 @@ musings-rush-executor
 MUSINGS_RUSH_BASE_DIR=./data musings-rush-executor --clamp
 ----
 
+For an executor that should stay attached for days, run it under the bundled supervisor instead. It restarts the executor the moment it exits, backing off only when it dies again at once, and logs every death with its exit status, which is the diagnosis: 137 is SIGKILL (the OOM killer or the platform), 143 is SIGTERM, anything else came from Python with a traceback above it. The server logs each attachment and loss on its side too, and `GET /rush/executor` reports how long ago an executor was last heard from, which `rush` shows when a submission is refused:
+
+----
+scripts/rush_executor_supervise.sh            # same arguments as the executor
+scripts/rush_executor_supervise.sh --clamp
+----
+
 In another, run rush:
 
 ----
