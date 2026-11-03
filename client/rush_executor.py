@@ -32,7 +32,6 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from types import TracebackType
 
 import httpx
 from hostlib import JobSpec, job_run
@@ -41,6 +40,9 @@ from hostlib.sink import SinkBase
 from client.env import env_load
 from client.transport import client_build
 from client.poller import output_truncate
+
+HEARTBEAT_INTERVAL_SECONDS = 1800.0
+ERROR_BACKOFF_SECONDS = 10.0
 
 
 class ChunkForwardSink(SinkBase):
@@ -195,24 +197,6 @@ def submission_execute(
     print(f"Submission {submissionId} finished with exit code {exitCode}.", flush=True)
 
 
-def excepthook_log(
-    excType: type[BaseException],
-    excValue: BaseException,
-    excTraceback: TracebackType | None,
-) -> None:
-    """Log an uncaught exception's traceback to stderr.
-
-    Installed as ``sys.excepthook`` so a death outside the poll loop
-    still leaves a traceback in the log instead of dying silently.
-
-    Args:
-        excType: Class of the uncaught exception.
-        excValue: The uncaught exception instance.
-        excTraceback: Traceback of the uncaught exception, if any.
-    """
-    traceback.print_exception(excType, excValue, excTraceback, file=sys.stderr)
-
-
 def executor_run(argv: list[str] | None = None) -> None:
     """Run the executor loop until interrupted.
 
@@ -246,8 +230,6 @@ def executor_run(argv: list[str] | None = None) -> None:
             f"this machine as this user, starting in {baseShown}.",
             flush=True,
         )
-    sys.excepthook = excepthook_log
-    heartbeatInterval = 1800.0
     lastHeartbeat = time.monotonic()
     try:
         while True:
@@ -255,7 +237,7 @@ def executor_run(argv: list[str] | None = None) -> None:
                 response = client.get("/rush/next", params={"executorId": executorId})
                 if response.status_code == 204:
                     now = time.monotonic()
-                    if now - lastHeartbeat >= heartbeatInterval:
+                    if now - lastHeartbeat >= HEARTBEAT_INTERVAL_SECONDS:
                         print(f"Executor {executorId} alive, polling.", flush=True)
                         lastHeartbeat = now
                     continue
@@ -269,11 +251,11 @@ def executor_run(argv: list[str] | None = None) -> None:
                 print(f"Executor error: {error}", file=sys.stderr)
                 time.sleep(5)
             except Exception:
-                # Anything else — a malformed payload, a hostlib failure —
+                # Anything else, a malformed payload or a hostlib failure,
                 # must not kill the daemon. Log the traceback and keep
-                # polling; that is the whole reconnect fix.
+                # polling.
                 traceback.print_exc(file=sys.stderr)
-                time.sleep(10)
+                time.sleep(ERROR_BACKOFF_SECONDS)
     except KeyboardInterrupt:
         print("Executor stopped.", flush=True)
 
